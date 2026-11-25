@@ -7,7 +7,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DATA, MEALS, SUGGESTIONS } from '../data/current';
 import { CONFIDENCE_LABEL, eligibleForBuild, fmtValue, foodId, readingLine, stepOf, type Suggestion } from '../data/suggestions';
-import { badgeCounts, markSuggestionsSeen, useTracked, type Tracked } from '../data/tracked';
+import { badgeNow, markSuggestionsSeen, toPortable, useTracked, type Tracked } from '../data/tracked';
+import { encodeTransfer, parseTransfer } from '@/lib/tracking/transfer';
 import { openNextBuild } from '../data/intent';
 import { nextBuildBridge, briefFor } from '../data/nextBuild';
 import type { Go } from '../nav';
@@ -19,15 +20,7 @@ const CONF_FLAG = { good: 'on', limited: 'dose', unusable: 'muted' } as const;
 type Tab = 'building' | 'ready';
 
 /** The badge counts as they were when the view opened, before it marks everything seen. */
-function badgeSnapshot() {
-  try {
-    const seen = JSON.parse(window.localStorage.getItem('loopstack.suggestionsSeen') ?? 'null') ?? { ids: [], ready: [] };
-    const tracked = JSON.parse(window.localStorage.getItem('loopstack.tracked') ?? '{}') ?? {};
-    return badgeCounts(SUGGESTIONS.map((s) => ({ id: s.id, ready: eligibleForBuild(s).ok })), tracked, seen);
-  } catch {
-    return { fresh: 0, reached: 0, total: 0 };
-  }
-}
+const badgeSnapshot = () => badgeNow(SUGGESTIONS.map((s) => ({ id: s.id, ready: eligibleForBuild(s).ok })));
 
 export function Suggestions({ go }: { go: Go }) {
   const t = useTracked();
@@ -47,8 +40,9 @@ export function Suggestions({ go }: { go: Go }) {
   // While you're here, anything you track or that turns ready counts as seen too (it only writes when something changed).
   useEffect(() => { markSuggestionsSeen(SUGGESTIONS.map((s) => ({ id: s.id, ready: eligibleForBuild(s).ok }))); });
 
-  const visible = SUGGESTIONS.filter((s) => t.all[s.id]?.state !== 'dismissed');
-  const ready = visible.filter((s) => t.all[s.id] && eligibleForBuild(s).ok);
+  const visible = SUGGESTIONS.filter((s) => t.all[s.id]?.state !== 'dismissed' && t.all[s.id]?.state !== 'built');
+  // Ready is every reading that can go into a build, tracked or not, so a click never moves a card between tabs.
+  const ready = visible.filter((s) => eligibleForBuild(s).ok);
   // Readable first, then Caveated; readings with too little data fold into one group so they don't bury the rest.
   const RANK = { good: 0, limited: 1, unusable: 2 } as const;
   const building = visible.filter((s) => !ready.includes(s)).sort((a, b) => RANK[a.confidence] - RANK[b.confidence] || a.label.localeCompare(b.label));
@@ -57,13 +51,13 @@ export function Suggestions({ go }: { go: Go }) {
   const staged = ready.filter((s) => t.all[s.id]?.state === 'staged');
   const dismissed = SUGGESTIONS.filter((s) => t.all[s.id]?.state === 'dismissed');
   // Foods tracked from Favorite foods that have no reading to suggest yet.
-  const watched = MEALS.groups.filter((g) => { const id = foodId(g.name); return t.all[id] && t.all[id].state !== 'dismissed' && !SUGGESTIONS.some((x) => x.id === id); });
+  const watched = MEALS.groups.filter((g) => { const id = foodId(g.name); return t.all[id] && t.all[id].state !== 'dismissed' && t.all[id].state !== 'built' && !SUGGESTIONS.some((x) => x.id === id); });
 
   return (
     <div className="suggestions stack-16">
       <section className="panel stack-12" aria-labelledby="sugg-h">
         <div className="row between wrap">
-          <h2 id="sugg-h" className="title">Suggestions</h2>
+          <h2 id="sugg-h" className="title">What your readings point at</h2>
           <Segmented label="Show" items={[{ value: 'building', label: `Building confidence · ${shown.length}` }, { value: 'ready', label: `Ready · ${ready.length}` }]} value={tab} onChange={setTab} />
         </div>
         <p className="small">What LoopStack’s readings point at for your settings and favorite foods, from {DATA.source === 'synthetic' ? 'the sample patient’s' : 'your'} Nightscout history. Track one to watch its confidence build. A reading that’s Readable, within a 20% step and not a safety limit can go into your next build, where Loop shows it as a proposal you confirm in Loop’s own settings.</p>
@@ -75,7 +69,7 @@ export function Suggestions({ go }: { go: Go }) {
         <>
           {shown.length
             ? <ul className="sugg-list">{shown.map((s) => <Card key={s.id} s={s} tracked={t.all[s.id] ?? null} t={t} today={today} announce={announce} />)}</ul>
-            : <section className="panel"><p className="small">{collecting.length ? 'Nothing readable yet. Everything below is still collecting data.' : 'Nothing building right now. Everything readable is in Ready.'}</p></section>}
+            : <section className="panel"><p className="small">{collecting.length ? 'Nothing readable yet. Everything below is still collecting data.' : 'Nothing building right now. Readings that can go into a build are under Ready.'}</p></section>}
           {watched.length > 0 && (
             <section className="panel stack-8" aria-labelledby="watched-h">
               <div className="row between wrap">
@@ -113,7 +107,7 @@ export function Suggestions({ go }: { go: Go }) {
             <div className="row between wrap">
               <div className="stack-4">
                 <h3 id="ready-h" className="h3">Ready to act on</h3>
-                <span className="caption">{ready.length} tracked {ready.length === 1 ? 'reading has' : 'readings have'} reached confidence · {staged.length} in your next build</span>
+                <span className="caption">{ready.length} {ready.length === 1 ? 'reading has' : 'readings have'} reached confidence · {staged.length} in your next build</span>
               </div>
               <ReadyActions staged={staged} tracked={t.all} go={go} announce={announce} />
             </div>
@@ -121,6 +115,7 @@ export function Suggestions({ go }: { go: Go }) {
           {ready.length
             ? <ul className="sugg-list">{ready.map((s) => <Card key={s.id} s={s} tracked={t.all[s.id] ?? null} t={t} today={today} announce={announce} />)}</ul>
             : <section className="panel"><p className="small">Nothing ready yet. Track a reading under Building confidence; it lands here once it’s Readable and within a 20% step.</p></section>}
+          <section className="panel"><ShareData tracked={t.all} announce={announce} /></section>
         </>
       )}
 
@@ -142,7 +137,7 @@ function Card({ s, tracked, t, today, announce }: { s: Suggestion; tracked: Trac
   const first = { date: today, confidence: s.confidence, reading: s.reading };
   const isStaged = tracked?.state === 'staged' && gate.ok;
   // A Readable reading leaves Building for Ready as soon as it's tracked: say so, since the card moves.
-  const track = () => { t.track(s.id, today, first); announce(gate.ok ? `${s.label} is tracked and moved to Ready.` : `Tracking ${s.label}.`); };
+  const track = () => { t.track(s.id, today, first); announce(`Tracking ${s.label}.`); };
   const stage = () => { t.stage(s.id, today, first); announce(`${s.label} added to your next build. It’s under Ready.`); };
   const stop = () => {
     // Stopping clears the confidence history, so a second click confirms when there's history or it's in the next build.
@@ -166,13 +161,14 @@ function Card({ s, tracked, t, today, announce }: { s: Suggestion; tracked: Trac
           {!tracked
             ? <button type="button" className="track-btn glass" onClick={track}><IPlus />Track</button>
             : <button type="button" className="track-btn glass on" aria-pressed="true" aria-label={confirmStop ? `Stop tracking ${s.label}? Its confidence history is cleared` : `Tracking ${s.label}. Press to stop`} onClick={stop}>{confirmStop ? 'Stop tracking?' : 'Tracking'}</button>}
+          {/* One primary per screen (the Ready tab's Build), so the per-card action is quiet. A reading that can't go in says why, in words, instead of a disabled button. */}
           {isStaged
-            ? <button type="button" className="cta glass-green" aria-pressed="true" onClick={() => t.unstage(s.id, today)}><ICheck />In next build</button>
-            : <button type="button" className="cta glass-green" disabled={!gate.ok} title={gate.ok ? undefined : gate.reason} onClick={stage}>Add to next build</button>}
+            ? <button type="button" className="quiet-btn" aria-pressed="true" onClick={() => t.unstage(s.id, today)}><ICheck />In next build</button>
+            : gate.ok && <button type="button" className="quiet-btn" onClick={stage}><IPlus />Add to next build</button>}
           <button type="button" className="expand-btn" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} details for ${s.label}`} onClick={() => setOpen((o) => !o)}><IChevron /></button>
         </div>
       </div>
-      {!gate.ok && <span className="caption gate-note">{gate.reason}</span>}
+      {!gate.ok && <span className="caption gate-note">Not for the next build yet: {gate.reason.charAt(0).toLowerCase() + gate.reason.slice(1)}</span>}
       {open && (
         <div className="sugg-detail stack-8">
           <dl className="sugg-facts">
@@ -197,6 +193,50 @@ function Card({ s, tracked, t, today, announce }: { s: Suggestion; tracked: Trac
         </div>
       )}
     </li>
+  );
+}
+
+/** Copy the tracked records as text, and paste records copied from the phone or another Mac. */
+export function ShareData({ tracked, announce }: { tracked: Record<string, Tracked>; announce: (m: string) => void }) {
+  const t = useTracked();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const say = (m: string, error = false) => { setNote({ text: m, error }); announce(m); };
+  const items = toPortable(tracked);
+  const kind = DATA.source === 'synthetic' ? 'sample' : 'real';
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(encodeTransfer(items, DATA.source === 'synthetic' ? 'Sample patient' : 'Your Nightscout', DATA.today, kind));
+      say(`Copied ${items.length} ${items.length === 1 ? 'item' : 'items'} with their confidence history.`);
+    } catch { say('Copying isn’t available here.', true); }
+  };
+  const doImport = () => {
+    const p = parseTransfer(text);
+    if (!p.ok) { say(p.error, true); return; }
+    if (p.kind && p.kind !== kind) { say(kind === 'sample' ? 'That copy is from your own data. The sample patient only takes sample copies.' : 'That copy is from the sample patient. It would mix demo data into your own.', true); return; }
+    const r = t.importItems(p.items);
+    setText('');
+    setOpen(false);
+    say(`Imported: ${r.added} new, ${r.updated} updated.`);
+  };
+  return (
+    <div className="stack-8">
+      <h3 className="label">Move between devices</h3>
+      <div className="row wrap" role="group" aria-label="Move your tracking between devices">
+        <button type="button" className="quiet-btn" disabled={!items.length} onClick={copy}>Copy confidence data</button>
+        <button type="button" className="quiet-btn" aria-expanded={open} aria-controls="share-paste" onClick={() => setOpen((v) => !v)}>Paste from another device</button>
+      </div>
+      {!items.length && <span className="caption">Copy needs something tracked first. Track a suggestion to start its confidence history.</span>}
+      {open && (
+        <div className="stack-8">
+          <label className="label" htmlFor="share-paste">Paste what you copied from LoopStack on your phone or another Mac</label>
+          <textarea autoCorrect="off" autoCapitalize="off" spellCheck={false} id="share-paste" className="input" rows={4} autoFocus placeholder="Paste here, then Import" value={text} onChange={(e) => setText(e.target.value)} />
+          <div><button type="button" className="quiet-btn" disabled={!text.trim()} onClick={doImport}>Import</button></div>
+        </div>
+      )}
+      {note && <span className={`caption${note.error ? ' error' : ''}`} role={note.error ? 'alert' : 'status'}>{note.text}</span>}
+    </div>
   );
 }
 

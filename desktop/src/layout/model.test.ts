@@ -136,7 +136,7 @@ describe('keyboard', () => {
   });
   it('resizes with Shift and arrows', () => {
     const l = defaultLayout();
-    const r = applyKey(l, 'glucose-now', 'ArrowRight', true);
+    const r = applyKey(resize(l, 'glucose-now', { w: 4 }), 'glucose-now', 'ArrowRight', true);
     expect(r.layout.tiles[indexOf(r.layout, 'glucose-now')].w).toBe(6);
     expect(r.message).toMatch(/M width/);
     const t = applyKey(r.layout, 'glucose-now', 'ArrowDown', true);

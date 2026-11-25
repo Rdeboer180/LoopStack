@@ -241,3 +241,6 @@
   font-weight: 600;
   color: var(--accent-info-ink);
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.markAll { min-height: var(--tap-target-min); }

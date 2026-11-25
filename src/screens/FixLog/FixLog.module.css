@@ -306,3 +306,6 @@
   align-self: flex-start;
   border: 1px solid rgba(92, 194, 92, 0.3);
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.whyToggle, .commitLink { min-height: var(--tap-target-min); display: inline-flex; align-items: center; }

@@ -3,6 +3,11 @@
 // React's double-run of state initializers in development sees it both times.
 let nextBuild = false;
 export const openNextBuild = () => { nextBuild = true; };
+
+/** The food to open when Favorite foods' full page loads (a home card was picked). Read once. */
+let food: string | null = null;
+export const openFood = (name: string) => { food = name; };
+export const takeFood = () => { const f = food; window.setTimeout(() => { food = null; }, 0); return f; };
 export const takeNextBuild = () => {
   const v = nextBuild;
   if (v) setTimeout(() => { nextBuild = false; }, 0);

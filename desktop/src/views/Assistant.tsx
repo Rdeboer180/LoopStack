@@ -10,39 +10,56 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { aiBridge, dataSummary, heldBack, repoSummary } from '../data/ai';
 import { githubBridge, setLoopBuild, useLoopBuild, type Commit } from '../data/loopBuild';
 import { Segmented, useAnnounce } from '../ui/kit';
-import { Diff } from './Library';
+import { Diff } from '../ui/Diff';
 import { NextBuild } from './NextBuild';
+import type { HourSelection } from '../nav';
+import { DATA } from '../data/current';
+import { rangeLabel } from '../data/derive';
+import { hourSummary } from '../data/hourSummary';
 import { takeNextBuild } from '../data/intent';
+import { AiConnector } from './Other';
 
 type Tab = 'chat' | 'ask' | 'build' | 'next';
-const MODES: { value: Tab; label: string }[] = [{ value: 'chat', label: 'Chat' }, { value: 'ask', label: 'Ask about your data' }, { value: 'build', label: 'Build a feature' }, { value: 'next', label: 'Next build' }];
+const MODES: { value: Tab; label: string }[] = [{ value: 'chat', label: 'Chat' }, { value: 'ask', label: 'Ask about your data' }, { value: 'build', label: 'Build a feature' }, { value: 'next', label: 'Build notes' }];
 interface QA { q: string; a: string | null; held: string[]; error: string | null }
 
-export function Assistant() {
+export function Assistant({ evidence }: { evidence?: HourSelection }) {
   const ai = aiBridge();
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [connectionError, setConnectionError] = useState(false);
   // Suggestions → Build opens straight on Next build.
-  const [tab, setTab] = useState<Tab>(() => (takeNextBuild() ? 'next' : 'chat'));
-  useEffect(() => { void ai?.config().then((c) => setConnected(c.connected)); }, [ai]);
+  const [tab, setTab] = useState<Tab>(() => (evidence ? 'ask' : takeNextBuild() ? 'next' : 'chat'));
+  useEffect(() => {
+    let active = true;
+    const read = () => { if (ai) void ai.config().then(c => { if (active) setConnected(c.connected); }).catch(() => {
+      if (active) { setConnected(false); setConnectionError(true); }
+    }); };
+    read();
+    // The key is set up on this screen: once it's saved, the screen unlocks without a reload.
+    const t = ai ? window.setInterval(() => { if (active) read(); }, 2000) : 0;
+    return () => { active = false; if (t) window.clearInterval(t); };
+  }, [ai]);
 
   if (!ai) {
+    if (tab === 'ask' && evidence) return <div className="stack-16" style={{ width: '100%' }}><Segmented label="Mode" items={MODES} value={tab} onChange={setTab} /><Ask locked evidence={evidence} /></div>;
     if (tab === 'next') return <div className="stack-16" style={{ width: '100%' }}><Segmented label="Mode" items={MODES} value={tab} onChange={setTab} /><NextBuild aiReady={false} /></div>;
-    return <div className="stack-16" style={{ width: '100%' }}><Segmented label="Mode" items={MODES} value={tab} onChange={setTab} /><div className="page-cols"><section className="panel stack-12"><h2 className="title">Ask & build</h2><p className="small">The LoopStack desktop app can use your own Anthropic API key to answer questions about your numbers and draft features for your Loop. This browser demo can’t.</p></section></div></div>;
+    return <div className="stack-16" style={{ width: '100%' }}><Segmented label="Mode" items={MODES} value={tab} onChange={setTab} /><div className="page-cols"><section className="panel stack-12"><h2 className="title">Ask & build</h2><p className="small">The LoopStack desktop app can use your own Anthropic API key to answer questions about your numbers and draft features for your Loop. Open the desktop app and add your key under Settings → AI connector to use it.</p></section></div></div>;
   }
   if (connected === false) {
     // A preview of each mode until a key is added: nothing can be sent.
     return (
       <div className="stack-16" style={{ width: '100%' }}>
-        <section className="panel preview-note"><p className="small"><b className="strong">Preview.</b> Add your Anthropic API key under Settings → AI connector to start. LoopStack uses your own key; nothing is sent until you ask.</p></section>
+        <section className="panel preview-note"><p className="small" role={connectionError ? 'alert' : undefined}><b className="strong">{connectionError ? 'Connection unavailable.' : 'Preview.'}</b> {connectionError ? 'Open Settings → AI connector to check your connection. Your messages have not been sent.' : 'Add your Anthropic API key to start. LoopStack uses your own key; nothing is sent until you ask.'}</p></section>{!connectionError && <AiConnector />}
         <Segmented label="Mode" items={MODES} value={tab} onChange={setTab} />
-        {tab === 'chat' ? <Chat locked /> : tab === 'ask' ? <Ask locked /> : tab === 'next' ? <NextBuild aiReady={false} /> : <BuildPreview />}
+        {tab === 'chat' ? <Chat locked /> : tab === 'ask' ? <Ask locked evidence={evidence} /> : tab === 'next' ? <NextBuild aiReady={false} /> : <BuildPreview />}
       </div>
     );
   }
+  if (connected === null) return <section className="panel" role="status"><p className="small">Checking your AI connection…</p></section>;
   return (
     <div className="stack-16" style={{ width: '100%' }}>
       <Segmented label="Mode" items={MODES} value={tab} onChange={setTab} />
-      {tab === 'chat' ? <Chat /> : tab === 'ask' ? <Ask /> : tab === 'next' ? <NextBuild aiReady /> : <Build />}
+      {tab === 'chat' ? <Chat /> : tab === 'ask' ? <Ask evidence={evidence} /> : tab === 'next' ? <NextBuild aiReady /> : <Build />}
     </div>
   );
 }
@@ -72,7 +89,7 @@ export function Chat({ locked = false, extra, title = 'Chat about your Loop', in
       const r = await gh.commits();
       if (!live) return;
       if (r.ok) setCommits(r.commits); else setRepoNote(`Couldn’t read your repo’s recent commits: ${r.error}`);
-    })();
+    })().catch(() => { if (live) setRepoNote('Recent repository changes could not be read. The chat can still review the dashboard summary.'); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gh]);
@@ -92,7 +109,7 @@ export function Chat({ locked = false, extra, title = 'Chat about your Loop', in
     setTurns((l) => [...l, { q, a: null, held: [], error: null }]);
     setText('');
     setBusy(true);
-    const r = await ai.chat({ messages: [...history, { role: 'user', text: q }], context: ctx });
+    const r = await ai.chat({ messages: [...history, { role: 'user', text: q }], context: ctx }).catch(() => ({ ok: false as const, error: 'The AI connection was interrupted. Your question is kept below. Check the connection and try again.' }));
     setBusy(false);
     setTurns((l) => {
       const next = l.slice(0, -1);
@@ -142,20 +159,22 @@ export function Chat({ locked = false, extra, title = 'Chat about your Loop', in
   );
 }
 
-function Ask({ locked = false }: { locked?: boolean }) {
+function Ask({ locked = false, evidence }: { locked?: boolean; evidence?: HourSelection }) {
   const ai = aiBridge()!;
-  const summary = useMemo(dataSummary, []);
-  const [question, setQuestion] = useState('');
+  const summary = useMemo(() => evidence ? hourSummary(DATA, evidence) : dataSummary(), [evidence]);
+  const [question, setQuestion] = useState(() => evidence
+    ? 'What do the ' + DATA.WEEKDAY_GRID.days[evidence.weekday].label + ' readings from ' + rangeLabel(evidence.hour, evidence.hour + 1) + ' show, and what limits the comparison?'
+    : '');
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<QA[]>([]);
   const ask = async (e: FormEvent) => {
     e.preventDefault();
     const q = question.trim();
-    if (!q || locked) return;
-    setBusy(true);
-    const r = await ai.ask({ question: q, summary });
-    setBusy(false);
+    if (!q || locked || busy) return;
     setQuestion('');
+    setBusy(true);
+    const r = await ai.ask({ question: q, summary }).catch(() => ({ ok: false as const, error: 'The AI connection was interrupted. Your question was kept. Check the connection and try again.' }));
+    setBusy(false);
     if (!r.ok) { setQuestion((cur) => cur || q); setLog((l) => [{ q, a: null, held: [], error: r.error }, ...l]); return; }
     const held = heldBack(r.answer);
     setLog((l) => [{ q, a: held.length ? null : r.answer, held, error: null }, ...l]);
@@ -166,8 +185,8 @@ function Ask({ locked = false }: { locked?: boolean }) {
         <h2 id="ask-h" className="title">Ask about your data</h2>
         <form className="stack-8" onSubmit={ask}>
           <label className="sr-only" htmlFor="ai-q">Your question</label>
-          <textarea id="ai-q" className="ai-input" rows={3} maxLength={2000} disabled={locked} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="For example: which hours does Loop most often deliver less than scheduled, and what is my glucose doing then?" />
-          <div className="row wrap"><button type="submit" className="solid-btn" disabled={locked || busy || !question.trim()}>{busy ? 'Asking…' : 'Ask'}</button><span className="caption">{locked ? 'Add your Anthropic API key under Settings → AI connector to ask.' : 'Claude Opus 5.5, with your key. Answers say what the data shows, never what to change.'}</span></div>
+          <textarea id="ai-q" className="ai-input" rows={3} maxLength={2000} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="For example: which hours does Loop most often deliver less than scheduled, and what is my glucose doing then?" />
+          <div className="row wrap"><button type="submit" className="solid-btn" disabled={locked || busy || !question.trim()}>{busy ? 'Asking…' : 'Ask'}</button><span className="caption">{locked ? (ai ? 'Add your Anthropic API key under Settings → AI connector to ask.' : 'Open LoopStack desktop and connect your AI key to send this question.') : 'Claude Opus 5.5, with your key. Answers say what the data shows, never what to change.'}</span></div>
         </form>
         <ol className="ai-log">
           {log.map((x, i) => (
@@ -182,8 +201,8 @@ function Ask({ locked = false }: { locked?: boolean }) {
       </section>
       <aside className="panel stack-8" aria-labelledby="sent-h">
         <h3 id="sent-h" className="h3">What’s sent</h3>
-        <p className="small">Your question and this summary of the numbers on your dashboard. No raw readings, no name, no Nightscout address or token. It goes to Anthropic with your key.</p>
-        <details><summary className="caption">Show the summary</summary><pre className="diff">{JSON.stringify(summary, null, 2)}</pre></details>
+        <p className="small">{evidence ? 'When you press Ask, Anthropic receives your question and the hour summary below.' : 'Your question and this summary of the numbers on your dashboard. No raw readings, no name, no Nightscout address or token. It goes to Anthropic with your key.'}</p>
+        <details open={evidence ? true : undefined}><summary className="caption">Show the summary</summary><pre className="diff">{JSON.stringify(summary, null, 2)}</pre></details>
       </aside>
     </div>
   );

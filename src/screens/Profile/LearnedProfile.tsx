@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Section, Row } from '@/components/Section/Section';
 import { EvidenceCard } from '@/components/EvidenceCard/EvidenceCard';
 import type { DietaryPreferences as Prefs } from '@/data/types';
+import { learnedRows, loadLearnedFeedback as loadFeedback, saveLearnedFeedback as persistFeedback, type LearnedFeedback } from '@/data/dietLabels';
 import styles from './Profile.module.css';
 
 /**
@@ -17,72 +18,11 @@ import styles from './Profile.module.css';
  * low-confidence until real meal data corroborates them.
  */
 
-type Feedback = 'confirmed' | 'flagged' | null;
-
-const FEEDBACK_KEY = 'loopstack:learnedProfileFeedback:v1';
-
-function loadFeedback(): Feedback {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(FEEDBACK_KEY);
-    return raw === 'confirmed' || raw === 'flagged' ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistFeedback(f: Feedback): void {
-  try {
-    if (f == null) window.localStorage.removeItem(FEEDBACK_KEY);
-    else window.localStorage.setItem(FEEDBACK_KEY, f);
-  } catch {
-    // storage unavailable — session-only state still applies
-  }
-}
+type Feedback = LearnedFeedback;
 
 type Props = {
   dietary: Prefs;
 };
-
-const patternLabel: Record<Prefs['pattern'], string> = {
-  none: 'No strong pattern',
-  vegetarian: 'Plant-forward (vegetarian)',
-  vegan: 'Plant-based (vegan)',
-  pescatarian: 'Pescatarian',
-  mediterranean: 'Mediterranean',
-  low_carb: 'Lower-carb',
-  keto: 'Ketogenic',
-};
-
-function carbLoadLabel(d: Prefs): string {
-  const plant = d.foodMix.wholePlantFoods;
-  const refined = d.foodMix.refinedCarbs;
-  if (plant === 'often' && refined !== 'often') return 'High-carb, high-fiber';
-  if (refined === 'often') return 'High-carb, more refined';
-  return 'Moderate carbohydrate';
-}
-
-function fatSignalLabel(d: Prefs): string {
-  switch (d.fatSensitivity) {
-    case 'low':
-      return 'Low late-fat delay';
-    case 'moderate':
-      return 'Some late-fat delay';
-    case 'high':
-      return 'Strong late-fat delay';
-  }
-}
-
-function rhythmLabel(d: Prefs): string {
-  switch (d.variance.consistency) {
-    case 'consistent':
-      return 'Consistent day to day';
-    case 'weekend_shift':
-      return 'Weekends shift later';
-    case 'highly_variable':
-      return 'Varies day to day';
-  }
-}
 
 export function LearnedProfile({ dietary }: Props) {
   const [feedback, setFeedback] = useState<Feedback>(loadFeedback);
@@ -100,10 +40,9 @@ export function LearnedProfile({ dietary }: Props) {
       title="What we've learned about you"
       description="Detected from your glucose, insulin, and meal data — not typed in. These shape how LoopStack reads your curves. If something looks off, nudge it; you never fill this out."
     >
-      <Row label="Eating pattern" value={patternLabel[dietary.pattern]} />
-      <Row label="Typical carb load" value={carbLoadLabel(dietary)} />
-      <Row label="Fat response" value={fatSignalLabel(dietary)} />
-      <Row label="Weekly rhythm" value={rhythmLabel(dietary)} />
+      {learnedRows(dietary).map(([label, value]) => (
+        <Row key={label} label={label} value={value} />
+      ))}
 
       <div className={styles.learnedActions}>
         <button

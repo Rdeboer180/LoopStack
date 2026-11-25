@@ -158,3 +158,6 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.link { min-height: var(--tap-target-min); display: inline-flex; align-items: center; }

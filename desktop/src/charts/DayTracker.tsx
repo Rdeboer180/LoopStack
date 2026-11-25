@@ -1,9 +1,10 @@
 // The day tracker (PROD-2): glucose, active insulin, active carbs and exercise
 // for each hour of one weekday, stacked on one shared hour axis (VIS-2, DM-4).
-// The heads-up stretch is shaded. Glucose below 70 is a larger red dot and
+// The heads-up stretch is shaded. Glucose below your low is a larger red dot and
 // named in the label, so colour is never the only signal (COL-5).
 import { DATA, DAY, type Dataset } from '../data/current';
 import { hourName, hourTick, rangeLabel } from '../data/derive';
+import { BANDS } from '../data/ranges';
 
 const PAD = { L: 92, R: 34, T: 22, B: 20 };
 
@@ -32,7 +33,7 @@ export function DayTrackerChart({ day = DAY, W, H, now, compact = false }: { day
   const exMax = Math.max(45, ...exEntries.map(([, m]) => m));
   const exTop = exEntries.reduce<readonly [number, number] | null>((b, e) => (!b || e[1] > b[1] ? e : b), null);
   const st = day.stretch;
-  const lows = day.glucose.map((g, h) => [g, h] as const).filter(([g]) => g < 70);
+  const lows = day.glucose.map((g, h) => [g, h] as const).filter(([g]) => g < BANDS.low);
   const area = (vals: readonly number[], base: number, scale: number) =>
     `M${x(0)} ${base}${vals.map((v, h) => `L${x(h).toFixed(1)} ${(base - Math.max(0, v) * scale).toFixed(1)}`).join('')}L${x(23)} ${base}Z`;
   const line = (vals: readonly number[], base: number, scale: number) =>
@@ -40,7 +41,7 @@ export function DayTrackerChart({ day = DAY, W, H, now, compact = false }: { day
   const cobPeak = peakAt(day.cob);
   const label = [
     `Day tracker, the average ${day.name} over the last ${day.weeks} weeks, by hour.`,
-    lows.length ? `Glucose dips below 70 mg/dL at ${lows.map(([g, h]) => `${hourName(h)}, ${g}`).join(' and ')} mg/dL${st ? `, inside the shaded ${rangeLabel(st[0], st[1])} stretch` : ''}.` : 'Glucose stays at or above 70 mg/dL in every hour.',
+    lows.length ? `Glucose dips below ${BANDS.low} mg/dL at ${lows.map(([g, h]) => `${hourName(h)}, ${g}`).join(' and ')} mg/dL${st ? `, inside the shaded ${rangeLabel(st[0], st[1])} stretch` : ''}.` : `Glucose stays at or above ${BANDS.low} mg/dL in every hour.`,
     `Active insulin peaks at ${day.iob[iobPeak].toFixed(1)} U around ${hourName(iobPeak)}.`,
     exTop ? `The most exercise is at ${hourName(exTop[0])}, ${Math.round(exTop[1])} minutes.` : 'No exercise recorded.',
     `Active carbs peak at ${Math.round(day.cob[cobPeak])} g around ${hourName(cobPeak)}.`,
@@ -57,8 +58,8 @@ export function DayTrackerChart({ day = DAY, W, H, now, compact = false }: { day
       {st && <rect x={xt(st[0])} y={PAD.T - 4} width={(st[1] - st[0]) * col} height={ph + 4} style={{ fill: 'var(--accent-info-soft)' }} />}
       {st && <text x={xt((st[0] + st[1]) / 2)} y={PAD.T - 8} fontSize="11" fontWeight="600" textAnchor="middle" style={{ fill: 'var(--accent-info-ink)' }}>{rangeLabel(st[0], st[1])}</text>}
       {/* target band, always drawn (DM-2) */}
-      <rect x={PAD.L} y={gy(180)} width={pw} height={gy(70) - gy(180)} style={{ fill: 'var(--range-in-soft)' }} />
-      {[70, 180].map((v) => (
+      <rect x={PAD.L} y={gy(BANDS.high)} width={pw} height={gy(BANDS.low) - gy(BANDS.high)} style={{ fill: 'var(--range-in-soft)' }} />
+      {[BANDS.low, BANDS.high].map((v) => (
         <g key={v}>
           <line x1={PAD.L} x2={PAD.L + pw} y1={gy(v)} y2={gy(v)} style={{ stroke: 'var(--range-in)' }} strokeWidth="1" opacity="0.6" />
           <text x={W - PAD.R + 6} y={gy(v) + 4} fontSize="11" style={labelStyle}>{v}</text>
@@ -66,9 +67,9 @@ export function DayTrackerChart({ day = DAY, W, H, now, compact = false }: { day
       ))}
       <path d={`M${day.glucose.map((g, h) => `${x(h).toFixed(1)} ${gy(g).toFixed(1)}`).join('L')}`} fill="none" style={{ stroke: 'var(--ink-500)' }} strokeWidth="1.5" strokeLinejoin="round" />
       {day.glucose.map((g, h) => (
-        g < 70
+        g < BANDS.low
           ? <circle key={h} cx={x(h)} cy={gy(g)} r="4.5" style={{ fill: 'var(--range-low)', stroke: 'var(--surface-0)' }} strokeWidth="1.2" />
-          : <circle key={h} cx={x(h)} cy={gy(g)} r="2.6" style={{ fill: g > 180 ? 'var(--range-high)' : 'var(--range-in)' }} />
+          : <circle key={h} cx={x(h)} cy={gy(g)} r="2.6" style={{ fill: g > BANDS.high ? 'var(--range-high)' : 'var(--range-in)' }} />
       ))}
       {lows.length > 0 && !compact && (
         <text x={x(lows[0][1]) + 8} y={gy(lows[0][0]) + 16} fontSize="11" fontWeight="600" style={{ fill: 'var(--ink-900)' }}>low {Math.min(...lows.map(([g]) => g))}</text>

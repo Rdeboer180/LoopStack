@@ -1,13 +1,13 @@
 import type { UserProfile } from './types';
 
 export const sampleUserProfile: UserProfile = {
-  id: 'u_sample',
-  displayName: 'Sam',
-  diagnosedOn: '2015-03-01',
+  id: 'u_ryan',
+  displayName: 'Ryan',
+  diagnosedOn: '2011-08-14',
   diabetesType: 't1',
   ageRange: '30-44',
   typicalRoutine: 'flexible',
-  // Derived diet context (no longer self-reported). A sample profile: a mostly plant-based,
+  // Derived diet context (no longer self-reported). Reflects a ~90% plant-based,
   // high-carb, high-fiber eater: low late-fat delay, no notable protein tail,
   // whole-plant-heavy with modest refined carbs. Feeds the context-only engine in
   // dietaryLoopSuggestions.ts until the meal-trace learner computes it directly.
@@ -52,9 +52,9 @@ export const sampleUserProfile: UserProfile = {
     urgentLowMgdl: 60,
     targetLowMgdl: 65,
     targetHighMgdl: 180,
-    baseIsf: 50,
-    observedIsf: 52,
-    carbRatio: 12,
+    baseIsf: 44,
+    observedIsf: 46,
+    carbRatio: 27.8,
     insulinDurationHours: 6,
     observedIsfMeta: {
       trend: 'up',

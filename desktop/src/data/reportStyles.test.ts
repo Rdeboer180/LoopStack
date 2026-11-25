@@ -16,6 +16,25 @@ describe('care-team report styles', () => {
       expect(new Set(s.sections.map((x) => x.id)).size).toBe(s.sections.length);
     }
   });
+  it('every style shows the Loop settings in effect, and where the care team’s input helps, in its first section', () => {
+    for (const s of REPORT_STYLES) {
+      expect(s.sections.flatMap((x) => x.blocks), s.id).toContain('therapy');
+      expect(s.sections[0].blocks, s.id).toContain('tldr');
+    }
+  });
+  it('no block appears twice in a style (it would print twice too)', () => {
+    for (const s of REPORT_STYLES) {
+      const blocks = s.sections.flatMap((x) => x.blocks);
+      expect(new Set(blocks).size, s.id).toBe(blocks.length);
+    }
+  });
+  it('settings are always Loop’s own, never named after a pump or device', () => {
+    for (const s of REPORT_STYLES) {
+      for (const sec of s.sections) expect(sec.label, s.id).not.toMatch(/pump|device/i);
+      const home = s.sections.find((x) => x.blocks.includes('therapy'))!;
+      expect(home.label, s.id).toMatch(/Loop|Settings timeline/);
+    }
+  });
   it('never borrows another system’s automation name for Loop', () => {
     for (const s of REPORT_STYLES) expect(JSON.stringify(s.terms)).not.toMatch(/SmartGuard|Control-IQ|Automated Mode/i);
   });

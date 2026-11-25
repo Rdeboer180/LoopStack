@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { eligibleForBuild, readingLine, stepOf, type Suggestion } from './suggestions';
-import { recordReadings, type Tracked } from './tracked';
+import { cleanTracked, recordReadings, type Tracked } from './tracked';
 
 const s = (over: Partial<Suggestion>): Suggestion => ({ id: 'x', kind: 'setting', target: 'basal', label: 'Basal rate, 7–8am', unit: 'U/h', current: 1, reading: 1.1, confidence: 'good', evidence: '', note: '', ...over });
 
 describe('SAFE-5a gate', () => {
+  it('refuses non-finite and negative values before computing a percentage', () => {
+    for (const value of [NaN, Infinity, -Infinity, -1, 0]) {
+      expect(eligibleForBuild(s({ reading: value })).ok).toBe(false);
+      expect(eligibleForBuild(s({ current: value })).ok).toBe(false);
+    }
+  });
   it('lets a readable reading within 20% through', () => {
     expect(eligibleForBuild(s({})).ok).toBe(true);
     expect(eligibleForBuild(s({ reading: 1.2 })).ok).toBe(true);
@@ -35,6 +41,15 @@ describe('SAFE-5a gate', () => {
 });
 
 describe('confidence history', () => {
+  it('recovers malformed stored tracking without discarding valid choices', () => {
+    expect(cleanTracked(null)).toEqual({});
+    expect(cleanTracked([])).toEqual({});
+    const clean = cleanTracked({ a: { state: 'tracked', since: 'Nov 1', history: null }, b: { state: 'staged', since: 'Nov 2', buildAs: 'branch', history: [{ date: 'Nov 2', confidence: 'good', reading: 1.1 }, { date: 'Nov 3', confidence: 'good', reading: NaN }] }, broken: null });
+    expect(clean.a.history).toEqual([]);
+    expect(clean.b.history).toHaveLength(1);
+    expect(clean.b.buildAs).toBe('branch');
+    expect(recordReadings(clean, 'Nov 4', [{ id: 'a', confidence: 'good', reading: 1 }]).a.history).toHaveLength(1);
+  });
   const t: Tracked = { id: 'a', state: 'tracked', since: 'Nov 1', buildAs: 'code', history: [{ date: 'Nov 1', confidence: 'limited', reading: 1.1 }] };
   it('adds one reading a day to tracked items only', () => {
     const next = recordReadings({ a: t, b: { ...t, id: 'b', state: 'dismissed' } }, 'Nov 2', [{ id: 'a', confidence: 'good', reading: 1.1 }, { id: 'b', confidence: 'good', reading: 1 }]);

@@ -233,3 +233,11 @@
 .agpKeyInner { background: var(--accent-info); opacity: 0.6; }
 .agpKeyMedian { background: var(--accent-info-ink); }
 .agpKeyTarget { background: var(--range-in); }
+
+/* A tab past the edge shows it's there: the strip fades at the right and snaps tab by tab (UX sweep, Nov 23). */
+.tabs { scroll-snap-type: x proximity; -webkit-mask-image: linear-gradient(90deg, black 85%, transparent); mask-image: linear-gradient(90deg, black 85%, transparent); }
+.tabs > * { scroll-snap-align: start; }
+
+/* An inline link in a sentence gets a 44pt hit area without changing the line (UX sweep, Nov 23). */
+.muted a { position: relative; }
+.muted a::before { content: ''; position: absolute; inset: -14px -6px; }

@@ -289,3 +289,6 @@ button.glanceItem { cursor: pointer; }
   line-height: var(--text-small-lh);
   color: var(--ink-500);
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.day { min-width: var(--tap-target-min); }

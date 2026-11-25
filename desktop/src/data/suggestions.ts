@@ -33,7 +33,15 @@ export interface Suggestion {
 }
 
 /** A favorite food's id, the same from the meal ledger and the absorption engine: "🌯 Burrito bowl" → "food-burrito-bowl". */
-export const foodId = (name: string) => `food-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'food'}`;
+/** One id per food name. Long or non-Latin names get a short hash, so two foods never share a record and every id fits the shared format. */
+export const foodId = (name: string) => {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (slug && slug.length <= 60) return `food-${slug}`;
+  let h = 0x811c9dc5;
+  for (const ch of name.trim().toLowerCase()) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 0x01000193) >>> 0; }
+  const tag = h.toString(36);
+  return slug ? `food-${slug.slice(0, 52).replace(/-$/, '')}-${tag}` : `food-${tag}`;
+};
 
 /** The share the reading moves from the value on file, 0.12 = 12%. */
 export const stepOf = (s: Pick<Suggestion, 'current' | 'reading'>) =>
@@ -47,6 +55,7 @@ export type Gate = { ok: true } | { ok: false; reason: string };
 export function eligibleForBuild(s: Pick<Suggestion, 'target' | 'confidence' | 'current' | 'reading'>): Gate {
   if ((SAFETY_LIMITS as readonly string[]).includes(s.target)) return { ok: false, reason: 'Safety limit: stays in Loop' };
   if (s.reading == null) return { ok: false, reason: 'Nothing to read yet' };
+  if (!Number.isFinite(s.current) || !Number.isFinite(s.reading) || s.current <= 0 || s.reading <= 0) return { ok: false, reason: 'Invalid reading or value on file' };
   if (s.confidence !== 'good') return { ok: false, reason: s.confidence === 'limited' ? 'Needs Readable confidence' : 'Not enough data yet' };
   const step = stepOf(s);
   if (step == null) return { ok: false, reason: 'Nothing to read yet' };

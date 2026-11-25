@@ -8,7 +8,7 @@ import { ABSORPTION_CHOICES, favoritesBridge, splitFoodName, type FavoriteFood }
 import { githubBridge, setLoopBuild, useLoopBuild } from '../data/loopBuild';
 import { dur, type MealGroup } from '../data/meals';
 import { useAnnounce } from '../ui/kit';
-import { Diff } from '../views/Library';
+import { Diff } from '../ui/Diff';
 
 type Step = 'form' | 'review' | 'dosing' | 'done';
 
@@ -105,7 +105,7 @@ function AddFavorite({ group, onDone, onCancel }: { group: MealGroup; onDone: (f
               </select>
             </label>
           </div>
-          <p className="caption">Before: you entered a median {group.medianCarbsG} g{group.medianEnteredMin != null ? ` with ${dur(group.medianEnteredMin)} absorption` : ''}, {group.n} times. Glucose came back near where it started after a median {dur(group.medianObservedMin)} ({group.observedN} of {group.n}). For your information; the values are yours to choose.</p>
+          <p className="caption">Before: you entered a median {group.medianCarbsG} g{group.medianEnteredMin != null ? ` with ${dur(group.medianEnteredMin)} absorption` : ''}, {group.n} times. {group.medianObservedMin != null ? `Absorbed in a median ${dur(group.medianObservedMin)}, counted the way Loop does (${group.observedN} of ${group.n}).` : 'No absorption time could be read yet.'} For your information; the values are yours to choose.</p>
           {error && <p className="caption error" role="alert">{error}</p>}
           <div className="row wrap">
             <button type="submit" className="solid-btn" disabled={busy}>{busy ? 'Preparing…' : 'Review the change'}</button>

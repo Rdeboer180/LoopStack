@@ -5,4 +5,55 @@
 .dash.editing .tile.arrange .tile-head { border-radius: var(--radius-card) var(--radius-card) 0 0; }
 .dash.editing .tile.arrange .tile-preview { border-radius: 0 0 var(--radius-card) var(--radius-card); }
 .dash.editing .tile.arrange:focus-within { z-index: 6; }
-.dash.editing .tile.arrange .menu { min-width: 232px; }
+.menu { min-width: 232px; }
+
+/* ------------------------------------------------------------ drag and resize (board pass, Nov 24)
+   Press anywhere on a tile to lift it; its place becomes a dashed slot the same
+   size; the lifted copy follows the pointer. Resize draws a snapped outline with
+   its size in words and reflows only on release. Grid guides firm up while
+   either is happening, so the 12 columns you snap to are visible. */
+.dash.editing .tile.arrange { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.dash.editing .tile.arrange .menu-btn { cursor: default; }
+html.ls-dragging, html.ls-dragging * { cursor: grabbing !important; user-select: none; }
+html.ls-resizing, html.ls-resizing * { cursor: nwse-resize !important; user-select: none; }
+.canvas.arrange-grid { position: relative; }
+
+/* The slot: where the tile will land. */
+.dash.editing .tile.arrange.slot { background: var(--surface-1); border: 1.5px dashed var(--ink-500); box-shadow: none; }
+.dash.editing .tile.arrange.slot > * { visibility: hidden; }
+
+/* The lifted copy. Its transform is set per frame from the pointer; the card inside lifts once. */
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; will-change: transform; }
+.drag-ghost-card {
+  box-sizing: border-box; width: 100%; height: 100%; overflow: hidden;
+  background: var(--surface-0); border: 1px solid var(--ink-900); border-radius: var(--radius-card);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--ink-900) 20%, transparent), 0 2px 6px color-mix(in srgb, var(--ink-900) 10%, transparent);
+  transform: scale(1.02) rotate(-0.6deg); transform-origin: 50% 0;
+  animation: ls-lift 160ms cubic-bezier(0.2, 0.8, 0, 1) both;
+}
+.drag-ghost-card .tile-head { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px; border-bottom: 1px solid var(--ink-200); background: var(--surface-1); color: var(--ink-700); }
+.drag-ghost-card .tile-title { font-size: 11px; line-height: 14px; color: var(--ink-900); }
+.drag-ghost-card .small { margin: 0; padding: 10px 12px; color: var(--ink-700); }
+@keyframes ls-lift { from { transform: none; box-shadow: none; } }
+
+/* Resize: the outline is where the corner will land, in steps the grid allows. */
+.resize-ghost {
+  position: absolute; left: -1px; top: -1px; z-index: 7; pointer-events: none; box-sizing: border-box;
+  border: 2px solid var(--accent-info); border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent-info-soft) 70%, transparent);
+  display: flex; align-items: flex-end; justify-content: flex-end; padding: 8px;
+}
+.resize-label { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--accent-info-ink); background: var(--surface-0); border: 1px solid var(--accent-info); border-radius: var(--radius-pill); padding: 2px 10px; white-space: nowrap; }
+.dash.editing .tile.arrange.resizing { z-index: 7; }
+
+/* Guides firm up while something is moving. */
+.canvas.arrange-grid.is-dragging, .canvas.arrange-grid.is-sizing {
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc((100% - 11 * var(--gap)) / 12), var(--ink-200) calc((100% - 11 * var(--gap)) / 12), var(--ink-200) calc((100% - 11 * var(--gap)) / 12 + var(--gap)));
+}
+
+/* Library rows can be pulled onto the grid. */
+.lib-row.draggable { cursor: grab; touch-action: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drag-ghost-card { animation: none; transform: none; }
+}

@@ -5,12 +5,14 @@
 // Every card shows what it does and whether it changes dosing. Adding one
 // means reading the full change; a dosing change needs a second confirmation;
 // the main process enforces both again before it commits.
+import { Diff } from '../ui/Diff';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CATALOG_SOURCE, CUSTOMIZATIONS, customization, KNOWN_PERSONAL, personalFeature, WORKFLOW_ICONS, type PersonalFeature } from '../data/loopCustomizations';
 import { githubBridge, setLoopBuild, useLoopBuild } from '../data/loopBuild';
 import { libraryBridge, mineBridge, type CheckResult, type LibraryCommit, type LibraryItem, type MineItem, type MineMove } from '../data/library';
 import { FeatureIcon } from '../ui/featureIcons';
 import { Segmented, useAnnounce } from '../ui/kit';
+import { YourLoop } from './Other';
 
 type Filter = 'all' | 'display' | 'dosing';
 type Step = 'review' | 'dosing' | 'done';
@@ -32,8 +34,23 @@ export function Library() {
   const [mineError, setMineError] = useState<string | null>(null);
   const [pickedMine, setPickedMine] = useState<string | null>(null);
   const [pickNonce, setPickNonce] = useState(0);
-  const pickLib = (id: string) => { setPicked(id); setPickedMine(null); };
-  const pickMine = (file: string) => { setPickedMine(file); setPicked(null); setPickNonce((n) => n + 1); };
+  // In one column (narrow windows) the detail sits below the list: bring it into view when something is picked.
+  const showDetail = () => requestAnimationFrame(() => {
+    if (!window.matchMedia('(max-width: 1180px)').matches) return;
+    const el = document.querySelector<HTMLElement>('.lib-detail');
+    el?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    el?.focus({ preventScroll: true });
+  });
+  const pickLib = (id: string) => { setPicked(id); setPickedMine(null); showDetail(); };
+  const pickMine = (file: string) => { setPickedMine(file); setPicked(null); setPickNonce((n) => n + 1); showDetail(); };
+
+  // The fork is connected on this screen: once it is, the library loads without a reload.
+  useEffect(() => {
+    if (connected !== false || !gh) return undefined;
+    const t = window.setInterval(() => { void gh.config().then((c) => { if (c.connected) { setConnected(true); void load(); } }); }, 2000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, gh]);
 
   const load = useCallback(async () => {
     if (!lib || !gh) return;
@@ -57,11 +74,11 @@ export function Library() {
     return (
       <div className="page-cols">
         <section className="panel stack-12">
-          <h2 className="title">Feature library</h2>
-          <p className="small">In the LoopStack desktop app, this is where your own features are turned on and off, and Loop and Learn’s customizations are added to your own Loop build, each one reviewed before it’s committed. This browser demo isn’t connected to a Loop.</p>
+          <h2 className="title">Features for your Loop</h2>
+          <p className="small">In the LoopStack desktop app, this is where your own features are turned on and off, and Loop and Learn’s customizations are added to your own Loop build, each one reviewed before it’s committed. This preview isn’t connected to a Loop.</p>
           <LibraryList items={items} onPick={pickLib} picked={picked} workflow={[]} />
         </section>
-        <aside className="panel stack-8 lib-detail" aria-label="Customization">
+        <aside className="panel stack-8 lib-detail" tabIndex={-1} aria-label="Customization">
           {picked ? <><h3 className="h3">{customization(picked).name}</h3><p className="small">{customization(picked).what}</p><p className="caption">In the desktop app this shows the exact change, checked against your Loop.</p></> : <p className="small">Pick a feature to read about it.</p>}
         </aside>
       </div>
@@ -72,13 +89,14 @@ export function Library() {
     return (
       <div className="feature-library">
         <section className="panel stack-12" aria-labelledby="lib-h">
-          <h2 id="lib-h" className="title">Feature library</h2>
-          <p className="small preview-note"><b className="strong">Preview.</b> Connect your Loop under Settings → Your Loop to see which of these are in your build and turn them on and off. The library changes only your own LoopWorkspace branch, so it needs to know which one.</p>
+          <h2 id="lib-h" className="title">Features for your Loop</h2>
+          <p className="small preview-note"><b className="strong">Preview.</b> Connect your GitHub fork below to see which of these are in your build and turn them on and off. The library changes only your own LoopWorkspace branch, so it needs to know which one. Every change is shown to you first.</p>
+          <YourLoop />
           <PreviewFeatures />
           <h3 className="h3 lib-section">Loop and Learn</h3>
           <LibraryList items={items} onPick={pickLib} picked={picked} workflow={[]} />
         </section>
-        <aside className="panel stack-12 lib-detail" aria-label="Customization">
+        <aside className="panel stack-12 lib-detail" tabIndex={-1} aria-label="Customization">
           <p className="small">{picked ? 'Connect your Loop to see exactly what this changes in your code.' : 'Pick a feature to read about it. Once your Loop is connected, this shows the exact change.'}</p>
         </aside>
       </div>
@@ -90,7 +108,7 @@ export function Library() {
     <div className="feature-library">
       <section className="panel stack-12" aria-labelledby="lib-h">
         <div className="row between wrap">
-          <h2 id="lib-h" className="title">Feature library</h2>
+          <h2 id="lib-h" className="title">Features for your Loop</h2>
           <Segmented size="sm" label="Show" items={[{ value: 'all', label: 'All' }, { value: 'display', label: 'Display only' }, { value: 'dosing', label: 'Changes dosing' }]} value={filter} onChange={setFilter} />
         </div>
         {mineApi && <YourFeatures items={mine} error={mineError} workflow={workflow} picked={pickedMine} onPick={pickMine} />}
@@ -111,7 +129,7 @@ export function Library() {
           </div>
         )}
       </section>
-      <aside className="panel stack-12 lib-detail" aria-label="Customization">
+      <aside className="panel stack-12 lib-detail" tabIndex={-1} aria-label="Customization">
         {pickedMine && mine
           ? <MineDetail key={`${pickedMine}-${pickNonce}`} file={pickedMine} item={mine.find((m) => m.file === pickedMine) ?? null} all={mine} onChanged={() => { void load(); announce('Your Loop branch changed.'); }} />
           : picked && list
@@ -471,14 +489,3 @@ function MineDetail({ file, item, all, onChanged }: { file: string; item: MineIt
 }
 
 /** The patch, line by line: additions and removals marked with + and − as well as colour (COL-5). */
-export function Diff({ text }: { text: string }) {
-  const lines = text.split('\n').filter((l) => !/^(index |Submodule |new file mode)/.test(l));
-  return (
-    <pre className="diff" aria-label="The full change" tabIndex={0}>
-      {lines.map((l, i) => {
-        const k = l.startsWith('diff --git') ? 'file' : l.startsWith('@@') ? 'hunk' : l.startsWith('+') && !l.startsWith('+++') ? 'add' : l.startsWith('-') && !l.startsWith('---') ? 'del' : 'ctx';
-        return <span key={i} className={`dl ${k}`}>{k === 'file' ? l.replace(/^diff --git a\/(\S+) b\/\S+$/, '$1') : l}{'\n'}</span>;
-      })}
-    </pre>
-  );
-}

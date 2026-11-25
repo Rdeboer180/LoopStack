@@ -26,7 +26,7 @@ import { LoopScheduleSettings } from './LoopScheduleSettings';
 import { NotificationSettings } from './NotificationSettings';
 
 const sourceLabel: Record<string, string> = {
-  mock: 'Mock data',
+  mock: 'Sample data',
   healthkit: 'Apple Health',
   nightscout: 'Nightscout',
 };

@@ -5,35 +5,21 @@
 // (VIS-8). Loop's words: temp basal, automatic bolus, 0 U/hr. Observations
 // only: what Loop did, never what to change (SAFE-1).
 import { useMemo, useState } from 'react';
-import { AUTO_BOLUS, OVERRIDE_HOURS, SCHED_EFF, DAYS, HOURLY_G, PERIOD, RATE, RUN_DAYS, RUN_TIME, SCHED, STATE } from '../data/current';
-import { hourName, morningValue, rangeLabel } from '../data/derive';
-import { balance, findPatterns, hourRows, type Balance, type HourRow, type Pattern, type PatternInputs } from '../data/patterns';
+import { PERIOD, RUN_TIME } from '../data/current';
+import { hourName, rangeLabel } from '../data/derive';
+import { balance, findPatterns, hourRows, type Balance, type HourRow, type Pattern } from '../data/patterns';
+import { loopPatternInputs } from '../data/loopPatterns';
 import type { FaceProps } from './faces';
 import './whatloopdid.css';
+import { BANDS } from '../data/ranges';
 
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WD_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const ORANGE = 'var(--graph-insulin)';
 
-function inputs(): PatternInputs {
-  return {
-    days: DAYS,
-    sched: SCHED,
-    state: STATE,
-    rate: RATE ? (d, h) => RATE![d][h] : (d, h) => morningValue(DAYS.indexOf(d), h),
-    autoBolus: AUTO_BOLUS ? (d, h) => AUTO_BOLUS![d]?.[h] ?? 0 : undefined,
-    schedOf: SCHED_EFF ? (d, h) => SCHED_EFF![d]?.[h] ?? SCHED[h] : undefined,
-    overrideAt: OVERRIDE_HOURS ? (d, h) => OVERRIDE_HOURS![d]?.[h] ?? null : undefined,
-    hourlyGlucose: HOURLY_G,
-    weekdayOf: (d) => WD.indexOf(d.split(' ')[0]),
-    workoutDays: RUN_DAYS,
-    workoutHour: RUN_TIME?.start ?? null,
-  };
-}
-
 function useModel() {
   return useMemo(() => {
-    const inp = inputs();
+    const inp = loopPatternInputs();
     const patterns = findPatterns(inp);
     const rows = hourRows(inp);
     return { bal: balance(inp), patterns, rows, other: rows.filter((r) => !patterns.some((p) => r.hour >= p.start && r.hour < p.end)).length };
@@ -200,9 +186,9 @@ function WindowChart({ p }: { p: Pattern }) {
   return (
     <svg viewBox={`0 0 ${W} 236`} role="img" aria-label={`${rangeLabel(p.window[0].hour, p.window[n - 1].hour + 1)}, median of the ${p.seen} days that showed it: glucose above, scheduled basal dotted and delivered solid below.`} className="wld-window">
       <rect x={x(si)} y="4" width={(ei - si + 1) * step} height="216" fill="var(--accent-info-soft)" />
-      <rect x="40" y={gy(180)} width={W - 50} height={gy(70) - gy(180)} fill="var(--range-in-soft)" />
-      <text x="34" y={gy(180) + 4} fontSize="10" textAnchor="end" fill="var(--ink-700)">180</text>
-      <text x="34" y={gy(70) + 4} fontSize="10" textAnchor="end" fill="var(--ink-700)">70</text>
+      <rect x="40" y={gy(BANDS.high)} width={W - 50} height={gy(BANDS.low) - gy(BANDS.high)} fill="var(--range-in-soft)" />
+      <text x="34" y={gy(BANDS.high) + 4} fontSize="10" textAnchor="end" fill="var(--ink-700)">{BANDS.high}</text>
+      <text x="34" y={gy(BANDS.low) + 4} fontSize="10" textAnchor="end" fill="var(--ink-700)">{BANDS.low}</text>
       {band && <path d={band} fill="var(--ink-900)" fillOpacity="0.08" />}
       <path d={gl} fill="none" stroke="var(--ink-900)" strokeWidth="2" />
       <text x="40" y="128" fontSize="10" fontWeight="600" fill="var(--ink-700)">BASAL · U/hr</text>
@@ -346,7 +332,6 @@ export function WhatLoopDidDetail() {
   const tent = patterns.filter((p) => !p.established);
   return (
     <div className="wld">
-      <p className="caption">{PERIOD.label} · {bal.days} days with Loop data · temp basals against your scheduled basal (scaled by an override’s insulin needs while one runs); automatic boluses counted separately</p>
       <section className="panel wld-balance" aria-labelledby="wld-bal">
         <div className="stack-4">
           <h2 id="wld-bal" className="label">Your day, against your scheduled basal</h2>
@@ -355,6 +340,7 @@ export function WhatLoopDidDetail() {
           {bal.autoBolus >= 0.05 && <p className="small">Loop also gave {u(bal.autoBolus)} a day in automatic boluses, on top of basal.</p>}
         </div>
         <DayStrip rows={rows} marked={est} numbered tall />
+        <p className="caption">{PERIOD.label} · {bal.days} days with Loop data · temp basals against your scheduled basal (scaled by an override’s insulin needs while one runs); automatic boluses counted separately</p>
       </section>
 
       <section className="stack-12" aria-labelledby="wld-pat">

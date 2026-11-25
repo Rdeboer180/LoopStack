@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hourSummary } from './hourSummary';
 import { checkCopyAll } from './safeCopy.testutil';
 import { buildNightscoutDataset, scheduleAt, type NsRaw } from './nightscout';
 
@@ -75,6 +76,26 @@ describe('Nightscout dataset', () => {
     expect(ds.DAY.name).toBe('Friday');
     expect(ds.DAY.glucose[16]).toBe(60);
     expect(ds.DAY_BY_WEEKDAY.filter(Boolean).length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('shows the dates behind the heads-up and limits the AI preview to the selected hour', () => {
+    const cell = ds.WEEKDAY_GRID.days[5].hours[15];
+    expect(cell.weeksVoted).toBe(5);
+    expect(cell.samples).toHaveLength(5);
+    expect(cell.samples?.every(s => s.count === 12 && s.below === 12)).toBe(true);
+    const summary = hourSummary(ds, { weekday: 5, hour: 15 });
+    expect(summary).toMatchObject({ source: 'Nightscout', countedReadings: 60, readingsBelowPct: 100 });
+    expect(JSON.stringify(summary)).not.toMatch(/firstIso|example.nightscout|Ryan/);
+  });
+
+  it('keeps partial hours inspectable without awarding them a vote or a percent', () => {
+    const raw = fixture();
+    const start = new Date(2026, 10, 6, 15).getTime();
+    raw.entries = raw.entries.filter(e => e.date >= start && e.date < start + 20 * MIN);
+    const partial = buildNightscoutDataset(raw);
+    expect(partial.WEEKDAY_GRID.days[5].hours[15].samples?.[0].count).toBe(4);
+    expect(hourSummary(partial, { weekday: 5, hour: 15 })).toMatchObject({ partialWeeks: 1, countedWeeks: 0, countedReadings: 0, readingsBelowPct: null });
+    expect(partial.WEEKDAY_GRID.days[6].hours[15].samples).toEqual([]);
   });
 
   it('records the carb ratio change from the profile history', () => {

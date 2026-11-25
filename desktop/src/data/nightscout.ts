@@ -11,7 +11,10 @@ import { buildHeadsUps } from '@/lib/alerts/trendHeadsUp';
 import type { Dataset, Day, HourState, Pt, SettingsChange } from './dataset';
 import { mealResponses } from './meals';
 import { summariseDay } from './daily';
-import { suggestionsFromNightscout } from './suggestFromNs';
+import { BANDS, bandRead } from './ranges';
+import { computeHypoReport } from '@/lib/metrics/hypoEvents';
+import { engineInputs, suggestionsFromNightscout, therapyFrom } from './suggestFromNs';
+import { observedAbsorption } from './carbAbsorbed';
 
 // ------------------------------------------------------------ raw records (as main.cjs sends them)
 
@@ -76,8 +79,9 @@ const HOUR = 3_600_000;
 const DAY_MS = 24 * HOUR;
 const MIN = 60_000;
 const TOLERANCE = 0.15;
-const LOW = 70;
-const HIGH = 180;
+/** Your bands (Settings → Your ranges): the day tracker and heads-ups score against them, as on the phone. */
+const LOW = BANDS.low;
+const HIGH = BANDS.high;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WD_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -214,7 +218,7 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
 
   // Two uploaders (say Loop and a CGM app) can send the same reading; keep one per minute.
   const entries = raw.entries
-    .filter((e) => Number.isFinite(e.date) && e.sgv > 20)
+    .filter((e) => Number.isFinite(e.date) && e.date <= now && Number.isFinite(e.sgv) && e.sgv > 20)
     .sort((a, b) => a.date - b.date)
     .filter((e, i, all) => i === 0 || e.date - all[i - 1].date >= MIN);
   const statuses = raw.devicestatus.filter((d) => Number.isFinite(Date.parse(d.created_at))).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
@@ -222,6 +226,10 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
   const latestProfile = profiles[profiles.length - 1] ?? null;
   const name = raw.name.trim() || 'Me';
   const first = name.split(/\s+/)[0];
+
+  // Readings indexed by day once: a 180-day period would otherwise rescan every reading for every day.
+  const entriesByDay = new Map<number, NsEntry[]>();
+  for (const e of entries) { const k = startOfDay(e.date); const a = entriesByDay.get(k); if (a) a.push(e); else entriesByDay.set(k, [e]); }
 
   // ---------------------------------------------- per day, per hour
   const dayStarts = Array.from({ length: days }, (_, i) => addDays(start, i));
@@ -351,7 +359,7 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
   const HOURLY_G: Record<Day, (number | null)[]> = {};
   dayStarts.forEach((ds, i) => {
     const byH: number[][] = Array.from({ length: 24 }, () => []);
-    for (const e of entries) if (e.date >= ds && e.date < addDays(ds, 1)) byH[new Date(e.date).getHours()].push(e.sgv);
+    for (const e of entriesByDay.get(ds) ?? []) byH[new Date(e.date).getHours()].push(e.sgv);
     HOURLY_G[DAYS[i]] = byH.map((v) => { const m = median(v); return m == null ? null : Math.round(m); });
   });
   const G6: Record<Day, { mgdl: number; trend: string } | null> = {};
@@ -382,15 +390,19 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
     trend: arr.glyph,
     trendLabel: arr.label,
     ageMin: last ? Math.max(0, Math.round((now - last.date) / MIN)) : 0,
+    statusAt: Number.isFinite(loopedAt) ? new Date(loopedAt).toISOString() : null,
     activeInsulinU: lastStatus?.iob ?? null,
     activeCarbsG: lastStatus?.cob == null ? null : Math.round(lastStatus.cob),
     points,
     prediction,
+    day: entries.filter((e) => e.date >= now - 24 * HOUR && e.date <= now).map((e) => [r2(rel(e.date)), e.sgv] as const),
   };
 
   // ---------------------------------------------- weekday picture: heads-up and day tracker (PROD-2)
   const glucose = entries.map((e) => ({ iso: new Date(e.date).toISOString(), mgdl: e.sgv }));
-  const grid = computeDayHourGrid({ glucose, target: { lowMgdl: LOW, highMgdl: HIGH }, now: new Date(now), weeks: 12 });
+  const grid = computeDayHourGrid({
+    glucose, target: { lowMgdl: LOW, highMgdl: HIGH }, now: new Date(now), weeks: 12, includeSamples: true,
+  });
   const todayWd = new Date(now).getDay();
   const hu = buildHeadsUps({ grid }).find((h) => h.weekday === todayWd) ?? null;
   const HEADS_UP: Dataset['HEADS_UP'] = hu ? {
@@ -402,14 +414,15 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
     stretch: [hu.startHour, hu.endHour + 1],
   } : null;
 
-  // 0–6: Sunday to Saturday. 7: every day, the average day across all of them.
-  const DAY_BY_WEEKDAY = Array.from({ length: 8 }, (_, wd) => dayTracker(wd));
+  // 0–6: Sunday to Saturday. 7: every day. 8: weekdays (Mon–Fri). 9: weekends. All within the review period.
+  // Index Loop status by day once (readings are indexed above): ten groups over up to 180 days would otherwise rescan everything.
+  const statusesByDay = new Map<number, NsStatus[]>();
+  for (const st of statuses) { const at = Date.parse(st.created_at); const k = startOfDay(at); const a = statusesByDay.get(k); if (a) a.push(st); else statusesByDay.set(k, [st]); }
+  const DAY_BY_WEEKDAY = Array.from({ length: 10 }, (_, wd) => dayTracker(wd));
   function dayTracker(wd: number): Dataset['DAY'] | null {
-    const from = addDays(now, -28);
-    const every = wd === 7;
-    const dates = every
-      ? Array.from({ length: 28 }, (_, i) => addDays(from, i + 1)).filter((d) => d < now)
-      : Array.from({ length: 5 }, (_, i) => addDays(from, i * 7 + ((wd - new Date(from).getDay() + 7) % 7))).filter((d) => d < now && d >= from);
+    const every = wd >= 7;
+    const inGroup = (d: number) => { const w = new Date(d).getDay(); return wd === 7 || (wd === 8 ? w >= 1 && w <= 5 : wd === 9 ? w === 0 || w === 6 : w === wd); };
+    const dates = dayStarts.filter(inGroup);
     const g: number[][] = Array.from({ length: 24 }, () => []);
     const iob: number[][] = Array.from({ length: 24 }, () => []);
     const cob: number[][] = Array.from({ length: 24 }, () => []);
@@ -417,7 +430,7 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
     let weeks = 0;
     for (const d0 of dates) {
       const d1 = addDays(d0, 1);
-      const day = entries.filter((e) => e.date >= d0 && e.date < d1);
+      const day = entriesByDay.get(d0) ?? [];
       if (day.length < 144) continue; // half a day of CGM, or it doesn't vote
       weeks += 1;
       const byH: number[][] = Array.from({ length: 24 }, () => []);
@@ -425,9 +438,8 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
       byH.forEach((v, h) => { const m = median(v); if (m != null) g[h].push(m); });
       const ib: number[][] = Array.from({ length: 24 }, () => []);
       const cb: number[][] = Array.from({ length: 24 }, () => []);
-      for (const s of statuses) {
+      for (const s of statusesByDay.get(d0) ?? []) {
         const at = Date.parse(s.created_at);
-        if (at < d0 || at >= d1) continue;
         const h = new Date(at).getHours();
         if (typeof s.iob === 'number') ib[h].push(s.iob);
         if (typeof s.cob === 'number') cb[h].push(s.cob);
@@ -449,18 +461,19 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
         }
       }
     }
-    // "weeks" counts the days that voted; for every day, that's days, reported as weeks.
-    if (weeks < (every ? 7 : 2)) return null;
+    // "weeks" counts the days that voted; for a group of weekdays, that's days, reported as weeks.
+    if (weeks < (wd === 7 ? 7 : every ? 4 : 2)) return null;
     const exercise: Record<number, number> = {};
     for (const [h, m] of ex) exercise[h] = Math.round(m / weeks);
     return {
       weekday: wd,
-      name: every ? 'day' : WD_LONG[wd],
+      name: wd === 7 ? 'day' : wd === 8 ? 'weekday' : wd === 9 ? 'weekend day' : WD_LONG[wd],
       glucose: fill(g.map((v) => { const m = median(v); return m == null ? null : Math.round(m); })).map(Math.round),
       iob: fill(iob.map((v) => median(v))).map(r2),
       cob: fill(cob.map((v) => median(v))).map((v) => Math.round(v)),
       exercise,
       weeks: every ? Math.max(1, Math.round(weeks / 7)) : weeks,
+      ...(every ? { days: weeks } : {}),
       stretch: !every && HEADS_UP && HEADS_UP.weekday === wd ? HEADS_UP.stretch : null,
     };
   }
@@ -473,7 +486,8 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
   // ---------------------------------------------- the 14-day read (AGP order)
   const inWindow = entries.filter((e) => e.date >= start && e.date < end).map((e) => e.sgv);
   const READ = readOf(inWindow, days);
-  const prevRead = readOf(entries.filter((e) => e.date >= prevStart && e.date < start).map((e) => e.sgv), days);
+  const prevValues = entries.filter((e) => e.date >= prevStart && e.date < start).map((e) => e.sgv);
+  const prevRead = readOf(prevValues, days);
   const slots = new Set<number>();
   for (const s of statuses) {
     const at = Date.parse(s.loopAt ?? s.created_at);
@@ -490,6 +504,8 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
   gaps.sort((a, b) => b.len - a.len);
   const fullRead: Dataset['READ'] = {
     ...READ,
+    mine: bandRead(inWindow),
+    prev: prevRead.sensorWornPct >= 50 ? { inRangePct: bandRead(prevValues).inRangePct, meanMgdl: prevRead.meanMgdl, gmiPct: prevRead.gmiPct, cvPct: prevRead.cvPct } : null,
     inRangeSinceLastVisit: prevRead.sensorWornPct >= 50 && READ.sensorWornPct >= 50 ? Math.round(READ.inRangePct - prevRead.inRangePct) : null,
     automationPct: Math.round((slots.size / totalSlots) * 100),
     automationGaps: gaps.length ? gaps.slice(0, 2).map((g) => `${g.len >= 120 ? `${Math.round(g.len / 60)} h` : `${g.len} min`} on ${md(g.at)}`).join(', ') : 'none over an hour',
@@ -544,15 +560,26 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
     ? [addDays(changeAt, -days), startOfDay(changeAt), addDays(changeAt, 1), Math.min(addDays(changeAt, days + 1), end)]
     : [prevStart, start, start, end];
   const side = (from: number, to: number) => {
-    const es = entries.filter((e) => e.date >= from && e.date < to);
+    // Each reading's clock time is worked out once, then dropped into every half-hour slot it is within 15 minutes of.
+    const slots = new Map<number, number[]>();
+    let usable = 0;
+    for (let d = startOfDay(from); d < to; d = addDays(d, 1)) {
+      const dayEs = (entriesByDay.get(d) ?? []).filter((e) => e.date >= from && e.date < to);
+      if (dayEs.length >= 0.7 * 288) usable += 1;
+      for (const e of dayEs) {
+        const dt = new Date(e.date);
+        const h = dt.getHours() + dt.getMinutes() / 60;
+        for (const t of new Set([Math.floor(h * 2) / 2, Math.ceil(h * 2) / 2])) {
+          if (t < 6 || t > 22 || Math.abs(h - t) > 0.25) continue;
+          const a = slots.get(t); if (a) a.push(e.sgv); else slots.set(t, [e.sgv]);
+        }
+      }
+    }
     const pts: Pt[] = [];
     for (let t = 6; t <= 22; t += 0.5) {
-      const v = es.filter((e) => { const d = new Date(e.date); const h = d.getHours() + d.getMinutes() / 60; return Math.abs(h - t) <= 0.25; }).map((e) => e.sgv);
-      const m = median(v);
+      const m = median(slots.get(t) ?? []);
       if (m != null) pts.push([t, Math.round(m)]);
     }
-    let usable = 0;
-    for (let d = from; d < to; d = addDays(d, 1)) if (es.filter((e) => e.date >= d && e.date < addDays(d, 1)).length >= 0.7 * 288) usable += 1;
     return { pts, usable, days: Math.round((to - from) / DAY_MS) };
   };
   const before = side(bFrom, bTo);
@@ -580,18 +607,28 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
   const sensor = lastOf(/sensor start|sensor change/i);
   const age = (ms: number) => { const h = Math.floor((now - ms) / HOUR); return `${Math.floor(h / 24)}d ${h % 24}h`; };
 
-  // ---------------------------------------------- meal response (last 30 days of carb entries)
+  // ---------------------------------------------- meal response (the period's carb entries, at least 30 days)
+  // Observed absorption per entry, the way Loop counts it (insulin counteraction), so it lines up with Loop's carb screen.
+  // Only the meal window (plus a day of lead-in for insulin still acting) goes through the engine.
+  const mealsFrom = addDays(now, -Math.max(30, days));
+  let absorbed: ReturnType<typeof observedAbsorption> | undefined;
+  try {
+    const lead = addDays(mealsFrom, -1);
+    const eng = engineInputs(entries.filter((e) => e.date >= lead), raw.treatments.filter((t) => tms(t) >= lead), statuses.filter((st) => Date.parse(st.created_at) >= lead));
+    absorbed = observedAbsorption({ glucose: eng.glucose, carbs: eng.carbs, insulin: eng.insulin, therapy: therapyFrom(latestProfile, now), end: now, loopCob: eng.loopCob });
+  } catch { /* no observed absorption: the ledger shows it as unknown */ }
   const MEALS = mealResponses({
+    absorbed,
     carbs: raw.treatments.filter((t) => typeof t.carbs === 'number' && t.carbs > 0).map((t) => ({ at: tms(t), grams: t.carbs!, absorptionMin: t.absorptionTime ?? null, name: t.foodType ?? null })),
     boluses: raw.treatments.filter((t) => isBolus(t) && !isAuto(t)).map((t) => ({ at: tms(t), units: t.insulin! })),
     glucose: entries.map((e) => ({ at: e.date, mgdl: e.sgv })),
     iob: statuses.filter((s) => typeof s.iob === 'number').map((s) => ({ at: Date.parse(s.created_at), u: s.iob! })),
-  }, addDays(now, -30), now);
+  }, mealsFrom, now);
 
   // ---------------------------------------------- daily glucose (each day of the period, and today so far)
   const longDay = (ms: number) => { const d = new Date(ms); return `${WD_SHORT[d.getDay()]}, ${md(ms)}`; };
   const DAILY: Dataset['DAILY'] = {
-    days: dayStarts.map((ds, i) => summariseDay(DAYS[i], longDay(ds), entries.filter((e) => e.date >= ds && e.date < addDays(ds, 1)).map((e) => e.sgv), usableDay[DAYS[i]].ok)),
+    days: dayStarts.map((ds, i) => summariseDay(DAYS[i], longDay(ds), (entriesByDay.get(ds) ?? []).map((e) => e.sgv), usableDay[DAYS[i]].ok)),
     today: (() => {
       const t = summariseDay(dayLabel(end), `Today, ${md(end)}`, entries.filter((e) => e.date >= end && e.date <= now).map((e) => e.sgv), true);
       return t.meanMgdl == null ? null : t;
@@ -604,8 +641,9 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
     SUGGESTIONS = suggestionsFromNightscout({ entries, treatments: raw.treatments, statuses, profile: latestProfile, now });
   } catch { /* the engine never breaks the dashboard */ }
 
-  const tir = READ.inRangePct;
-  const below = r1(READ.veryLowPct + READ.lowPct);
+  const mine = bandRead(inWindow);
+  const tir = mine.inRangePct;
+  const below = r1(mine.urgentPct + mine.lowPct);
   const lunchDelta = pb && pa ? pb[1] - pa[1] : null;
   const lead = useChange ? 'After the change' : `In the last ${days} days`;
 
@@ -645,8 +683,11 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
       clinician: 'your care team',
       nextVisit: 'not set',
     },
+    THERAPY: { ...therapyFrom(latestProfile, now), from: latestProfile ? 'nightscout' : 'sample' },
+    LOWS: computeHypoReport({ glucose: entries.map((e) => ({ iso: new Date(e.date).toISOString(), mgdl: e.sgv })), target: { lowMgdl: BANDS.low, highMgdl: BANDS.high, urgentLowMgdl: BANDS.urgentLow }, now: new Date(now), windowDays: days }),
     CGM_NOW,
     HEADS_UP,
+    WEEKDAY_GRID: grid,
     AVG_DAY,
     CARE_NOTE: null,
     LUNCH,
@@ -671,7 +712,7 @@ export function buildNightscoutDataset(raw: NsRaw, opts: BuildOptions = {}): Dat
       lunchFinding: pb && pa ? `${lead}, median lunch peaks were ${Math.abs(lunchDelta!) < 5 ? `within ${Math.max(1, Math.abs(lunchDelta!))} mg/dL of before` : `about ${Math.abs(lunchDelta!)} mg/dL ${lunchDelta! > 0 ? 'lower' : 'higher'}`} (${pb[1]} → ${pa[1]} mg/dL).` : 'Not enough lunchtime readings on both sides to compare.',
       pattern: HEADS_UP
         ? `${WD_LONG[HEADS_UP.weekday]}s ${rangeLabel(HEADS_UP.stretch[0], HEADS_UP.stretch[1])} run ${HEADS_UP.kind} in ${hu!.sharePct}% of readings, over ${hu!.weeks} weeks.`
-        : `${tir}% in range over ${days} days, ${below}% below 70 mg/dL. No weekday stretch passed the 10% heads-up bar today.`,
+        : `${tir}% in range over ${days} days, ${below}% below ${LOW} mg/dL. No weekday stretch passed the 10% heads-up bar today.`,
       suspendNote: '',
       loopGlance: less
         ? `${partOfDay(less.a).one[0].toUpperCase()}${partOfDay(less.a).one.slice(1)} ${rangeLabel(less.a, less.b)}: Loop delivered about ${less.pct}% less than scheduled.`

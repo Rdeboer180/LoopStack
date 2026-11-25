@@ -10,7 +10,7 @@ import { DATA, PATIENT, PATIENTS, PERIOD, QUESTION } from '../data/current';
 import type { Go, Route } from '../nav';
 import { useStore } from '../state';
 import { Thread } from '../tiles/faces';
-import { IMail, IPdf, useAnnounce } from '../ui/kit';
+import { IMail, IPdf, TileSelect, useAnnounce } from '../ui/kit';
 
 export function Review({ route, go }: { route: Route; go: Go }) {
   const { packet } = useStore();
@@ -26,7 +26,7 @@ export function Review({ route, go }: { route: Route; go: Go }) {
   return (
     <div className="review">
       <nav className="patients" aria-label="Patients">
-        <h2 className="label">{DATA.source === 'synthetic' ? 'Thursday visits' : 'Your packet'}</h2>
+        <h2 className="label">{DATA.source === 'synthetic' ? 'This week’s visits' : 'Your packet'}</h2>
         <ul>
           {PATIENTS.map((p) => {
             const shared = p.id === PATIENTS[0].id ? packet.shared : null;
@@ -215,12 +215,11 @@ function SamReview({ route, go, flags = [] }: { route: Route; go: Go; flags?: re
               </button>
             ))}
           </div>
-          <label className="style-pick">
-            <span className="caption">Report style</span>
-            <select value={style.id} onChange={(e) => setStyle(e.target.value as StyleId)}>
-              {REPORT_STYLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
-          </label>
+          {/* The system's pill select (TileSelect), not a native <select>: macOS drew that one with its own heavy ring. */}
+          <div className="style-pick">
+            <span className="caption" aria-hidden="true">Report style</span>
+            <TileSelect<StyleId> label="Report style" value={style.id} options={REPORT_STYLES.map((r) => ({ value: r.id, label: r.label }))} onChange={setStyle} />
+          </div>
         </div>
         {style.id !== 'loopstack' && <p className="caption style-note">{style.note}</p>}
       </header>
@@ -247,14 +246,18 @@ function QuestionRail() {
   const [modifying, setModifying] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // What was just sent: the buttons give way to it, so one click can't send twice.
+  const [sent, setSent] = useState<string | null>(null);
   const opt = QUESTION?.options.find((o) => o.id === option);
 
   const record = (kind: 'agree' | 'modify' | 'discuss', text: string) => {
     send({ from: 'clinician', date: DATA.today, text, decision: kind });
     announce(`Reply recorded in ${PATIENT.first}’s thread: ${text}`);
+    setSent(text);
     setModifying(false);
     setNote('');
     setError(null);
+    requestAnimationFrame(() => document.getElementById('thread-h')?.scrollIntoView({ block: 'nearest' }));
   };
   const agree = () => {
     if (!opt) { setError('Pick an option first.'); return; }
@@ -308,11 +311,21 @@ function QuestionRail() {
             <textarea id="modify-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: start with the preset for two Fridays, then compare" />
           </div>
         )}
-        <div className="decide" role="group" aria-label={`Reply to ${PATIENT.first}`}>
-          <button type="button" className="decide-btn" onClick={agree}>Agree</button>
-          <button type="button" className="decide-btn" onClick={modify}>{modifying ? 'Send modify' : 'Modify'}</button>
-          <button type="button" className="decide-btn" onClick={() => record('discuss', `Let’s discuss this at the visit on ${PATIENT.nextVisit}.`)}>Discuss</button>
-        </div>
+        {sent ? (
+          <div className="decide-sent" role="status">
+            <p className="small"><b className="strong">Sent · {DATA.today}.</b> {sent}</p>
+            <button type="button" className="text-btn" onClick={() => setSent(null)}>Send another reply</button>
+          </div>
+        ) : (
+          <>
+            <div className="decide" role="group" aria-label={`Reply to ${PATIENT.first}`}>
+              <button type="button" className="cta glass-green" onClick={agree} disabled={!opt} aria-describedby={!opt ? 'decide-hint' : undefined}>Agree{opt ? ` on ${opt.id}` : ''}</button>
+              <button type="button" className="decide-btn" onClick={modify}>{modifying ? 'Send modify' : 'Modify'}</button>
+              <button type="button" className="decide-btn" onClick={() => record('discuss', `Let’s discuss this at the visit on ${PATIENT.nextVisit}.`)}>Discuss</button>
+            </div>
+            {!opt && <p id="decide-hint" className="caption">Pick one of {PATIENT.first}’s options to agree to it.</p>}
+          </>
+        )}
         {error && <p className="caption error" role="alert">{error}</p>}
         <p className="caption never">LoopStack never changes the pump or {PATIENT.first}’s settings. {PATIENT.first} makes any change in Loop.</p>
       </section>

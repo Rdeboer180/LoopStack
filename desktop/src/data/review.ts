@@ -1,7 +1,9 @@
 // The care-team review read: the fixed order every packet opens in (PROD-1),
 // the AGP order clinicians already review in (VIS-10). Page one is glucose
 // only: enough data, then lows, then time in range, then the curve.
-import { blocks, diff, partOfDay, rangeLabel, USABLE_N } from './derive';
+import { partOfDay, rangeLabel, USABLE_N } from './derive';
+import { findPatterns } from './patterns';
+import { loopPatternInputs } from './loopPatterns';
 import { CHANGES, LUNCH, READ, TEXT } from './current';
 
 export type ReadKey = 'sensor' | 'lows' | 'tir' | 'automation' | 'gmi-cv' | 'agp';
@@ -28,13 +30,14 @@ export function reviewRead(r = READ): ReadItem[] {
 
 /** The three TLDR lines, in clinician terms (DATA-2, VIS-A3). Observations only (SAFE-1). */
 export function tldrLines() {
-  // The 3-hour block where Loop most often ran away from the schedule.
-  const strongest = blocks()
-    .filter((b) => b.verdict === 'l' || b.verdict === 'm')
-    .sort((a, b) => b.counts[b.verdict] - a.counts[a.verdict] || Math.abs(diff(b.loop, b.sched)) - Math.abs(diff(a.loop, a.sched)))[0];
+  // The same detector as What Loop did, so the TLDR and the tile never disagree on a count.
+  const strongest = findPatterns(loopPatternInputs())
+    .filter((p) => p.established)
+    .sort((a, b) => b.seen / b.of - a.seen / a.of || b.end - b.start - (a.end - a.start))[0];
+  const what = (k: string) => (k === 'zero' ? 'suspended basal (0 U/hr)' : `algorithm-modulated basal ${k === 'below' ? 'below' : 'above'} the scheduled rate`);
   const loop = strongest
-    ? `Most ${partOfDay(strongest.start).many} ${rangeLabel(strongest.start, strongest.end)}, algorithm-modulated basal ran about ${Math.abs(Math.round(diff(strongest.loop, strongest.sched) * 100))}% ${strongest.verdict === 'l' ? 'below' : 'above'} the scheduled rate (${strongest.counts[strongest.verdict]} of ${USABLE_N} days).`
-    : `Algorithm-modulated basal ran about as scheduled in every 3-hour block (${USABLE_N} days).`;
+    ? `Most ${partOfDay(strongest.start).many} ${rangeLabel(strongest.start, strongest.end)}, Loop ran ${what(strongest.kind)}: ${strongest.seen} of ${strongest.of} days, a median ${Math.abs(strongest.netUph).toFixed(2)} U/hr ${strongest.kind === 'above' ? 'above' : 'below'}.`
+    : `Algorithm-modulated basal ran close to the scheduled rate through the day (${USABLE_N} days).`;
   const peakDrop = Math.max(...LUNCH.before.map((p) => p[1])) - Math.max(...LUNCH.after.map((p) => p[1]));
   const applied = CHANGES.filter((c) => c.status === 'applied' || c.status === 'reviewed');
   const change = applied[0];

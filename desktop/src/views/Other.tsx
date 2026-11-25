@@ -1,15 +1,21 @@
 // The patient's Changes and Settings pages. Settings is where Nightscout connects.
+import type { Go } from '../nav';
+import { isAppearance, type Appearance } from '../layout/saved';
+import { openSetup, progressWords, STEP_IDS, STEP_TITLE, useSetup } from '../data/setup';
 import { useEffect, useState, type FormEvent } from 'react';
 import { DATA, LUNCH, PATIENT, PERIOD, READ, TEXT } from '../data/current';
 import { bridge, loadNightscout, showSample, type NsConfig } from '../data/source';
 import { customization } from '../data/loopCustomizations';
 import { daysLeft, githubBridge, setLoopBuild, useLoopBuild, type LoopBuildStatus } from '../data/loopBuild';
 import { aiBridge } from '../data/ai';
+import { syncBridge } from '../data/buildNotes';
 import { useAnnounce } from '../ui/kit';
 import { PRESETS, type Layout } from '../layout/model';
 import { useStore } from '../state';
 import { BaChart, BaLegend } from '../tiles/faces';
 import { ChangeTimeline } from './Review';
+import { Basics, LearnedAboutYou, MacNotifications, YourLoopSettings, YourRanges } from './YourProfile';
+import { rangeText } from '../data/ranges';
 
 export function Changes() {
   return (
@@ -30,26 +36,39 @@ export function Changes() {
   );
 }
 
-export function Settings({ layout, onReset }: { layout: Layout; onReset: () => void }) {
+export function Settings({ go, layout, onReset, appearance, onAppearance }: { go: Go; layout: Layout; onReset: () => void; appearance: Appearance; onAppearance: (a: Appearance) => void }) {
   const { packet } = useStore();
   return (
     <div className="page-cols">
+      <SetupChecklist go={go} />
       <section className="panel stack-12" aria-labelledby="set-h">
-        <h2 id="set-h" className="title">Settings</h2>
+        <h2 id="set-h" className="title">You and this Mac</h2>
         <dl className="facts">
           <div><dt>Person</dt><dd>{PATIENT.name}{DATA.source === 'synthetic' ? ', synthetic' : ''}</dd></div>
           <div><dt>System</dt><dd>{PATIENT.setup}</dd></div>
-          <div><dt>Units</dt><dd>mg/dL · target range 70–180</dd></div>
+          <div><dt>Units</dt><dd>mg/dL · in range {rangeText()}</dd></div>
           <div><dt>Data</dt><dd>{PERIOD.label}, {READ.sensorWornPct}% sensor wear</dd></div>
           {DATA.source === 'synthetic' && <div><dt>Care team</dt><dd>{PATIENT.clinician} · {PATIENT.engagement.toLowerCase()}</dd></div>}
           <div><dt>Last packet</dt><dd>shared {packet.shared}</dd></div>
           <div><dt>Layout</dt><dd>{layout.preset === 'custom' ? 'Your own' : PRESETS[layout.preset].name} · saved on this computer</dd></div>
         </dl>
-        <div><button type="button" className="quiet-btn" onClick={onReset}>Reset dashboard to default</button></div>
+        <label className="style-pick settings-appearance">
+          <span className="small strong">Appearance</span>
+          <select value={appearance} onChange={(e) => { if (isAppearance(e.target.value)) onAppearance(e.target.value); }}>
+            <option value="system">Match this Mac</option><option value="light">Light</option><option value="dark">Dark</option>
+          </select>
+        </label>
+        <ResetDashboard onReset={onReset} />
       </section>
+      <YourRanges />
+      <YourLoopSettings />
+      <MacNotifications />
+      <Basics />
+      <LearnedAboutYou />
       <DataSource />
       <YourLoop />
       <AiConnector />
+      <SyncFolder />
       <section className="panel stack-12" aria-labelledby="about-h">
         <h2 id="about-h" className="h3">About LoopStack</h2>
         <p className="small">The companion app for people who loop. Organize. Understand. Share.</p>
@@ -60,8 +79,52 @@ export function Settings({ layout, onReset }: { layout: Layout; onReset: () => v
   );
 }
 
+/** Settings' way back into setup: each step and where it stands. */
+function SetupChecklist({ go }: { go: Go }) {
+  const { states } = useSetup();
+  const done = STEP_IDS.filter((id) => states[id] === 'done').length;
+  if (done === STEP_IDS.length) return null;
+  return (
+    <section className="panel stack-12" aria-labelledby="setup-list-h">
+      <div className="row between wrap">
+        <h2 id="setup-list-h" className="h3">{progressWords(states)}</h2>
+        <button type="button" className="quiet-btn" onClick={() => openSetup(states.data === 'done' ? 'dashboard' : 'data')}>Open setup</button>
+      </div>
+      <ul className="setup-list">
+        {STEP_IDS.map((id) => (
+          <li key={id} className={states[id]}>
+            <span className="setup-mark" aria-hidden="true">{states[id] === 'done' ? '✓' : states[id] === 'skipped' ? '–' : '○'}</span>
+            <span className="strong">{STEP_TITLE[id]}</span>
+            <span className="caption">{states[id] === 'done' ? 'done' : states[id] === 'skipped' ? 'skipped for now' : 'to do'}</span>
+            {states[id] !== 'done' && <button type="button" className="text-btn" onClick={() => (id === 'care' ? go({ view: 'review' }) : id === 'tools' ? go({ view: 'assistant' }) : openSetup(id))}>Set up</button>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Reset asks once: it replaces the working dashboard (saved layouts are kept). */
+function ResetDashboard({ onReset }: { onReset: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [done, setDone] = useState(false);
+  if (asking) return (
+    <div className="row wrap" role="group" aria-label="Confirm reset">
+      <p className="small">Reset your dashboard to the default layout? Saved layouts are kept.</p>
+      <button type="button" className="quiet-btn" autoFocus onClick={() => { onReset(); setAsking(false); setDone(true); }}>Reset</button>
+      <button type="button" className="text-btn" onClick={() => setAsking(false)}>Cancel</button>
+    </div>
+  );
+  return (
+    <div className="row wrap">
+      <button type="button" className="quiet-btn" onClick={() => { setAsking(true); setDone(false); }}>Reset dashboard to default</button>
+      {done && <span className="caption" role="status">Dashboard reset. Saved layouts were kept.</span>}
+    </div>
+  );
+}
+
 /** Connect the person's own Nightscout (desktop app only). Read-only, with a readable-role access token. */
-function DataSource() {
+export function DataSource({ variant }: { variant?: 'setup' } = {}) {
   const b = bridge();
   const announce = useAnnounce();
   const [cfg, setCfg] = useState<NsConfig | null>(null);
@@ -82,7 +145,7 @@ function DataSource() {
     return (
       <section className="panel stack-12" aria-labelledby="src-h">
         <h2 id="src-h" className="h3">Your data</h2>
-        <p className="small">This browser demo shows a synthetic patient. The LoopStack desktop app reads your own Nightscout.</p>
+        <p className="small">This preview shows a synthetic patient. The LoopStack desktop app reads your own Nightscout.</p>
       </section>
     );
   }
@@ -119,7 +182,7 @@ function DataSource() {
           ? <span>Reading <b className="strong">{DATA.sourceLabel}</b> · {PERIOD.label} · read {new Date(DATA.fetchedAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
           : cfg?.connected ? <span>Connected to {new URL(cfg.url).host}, showing the sample patient</span> : <span>Showing the sample patient</span>}
       </div>
-      {live || cfg?.connected ? (
+      {variant !== 'setup' && (live || cfg?.connected) ? (
         <div className="row wrap">
           {live
             ? <button type="button" className="solid-btn" onClick={refresh} disabled={busy != null}>{busy === 'refresh' ? 'Reading…' : 'Read again'}</button>
@@ -141,7 +204,11 @@ function DataSource() {
         <div><button type="submit" className="solid-btn" disabled={busy != null}>{busy === 'connect' ? 'Connecting…' : cfg?.connected ? 'Save and read' : 'Connect'}</button></div>
       </form>
       {error && <p className="caption error" role="alert">{error}</p>}
-      <p className="caption">Make a token in Nightscout under Admin tools → Subjects with the readable role. LoopStack only reads Nightscout: it never writes to it or to your pump. The token is kept in this Mac’s keychain; your readings stay in memory on this computer.</p>
+      <details className="ns-how">
+        <summary>How to make a read-only token</summary>
+        <p className="caption">In Nightscout, open Admin tools → Subjects and add one with the readable role. Paste its token here. If you paste your API secret instead, LoopStack doesn’t use it.</p>
+      </details>
+      <p className="caption">A read-only pass you make in your Nightscout. It can’t change Nightscout, Loop or your pump. It’s saved on this Mac, locked with the Mac’s keychain; your readings stay in memory on this computer.</p>
     </section>
   );
 }
@@ -161,7 +228,7 @@ function runWords(s: LoopBuildStatus): string {
 }
 
 /** Connect the person's LoopWorkspace fork: read its version, customizations and builds, and start a build. */
-function YourLoop() {
+export function YourLoop() {
   const b = githubBridge();
   const announce = useAnnounce();
   const status = useLoopBuild();
@@ -206,7 +273,7 @@ function YourLoop() {
     return (
       <section className="panel stack-12" aria-labelledby="loop-h">
         <h2 id="loop-h" className="h3">Your Loop</h2>
-        <p className="small">The LoopStack desktop app connects to your own Loop build on GitHub. This browser demo doesn’t.</p>
+        <p className="small">The LoopStack desktop app connects to your own Loop build on GitHub. This preview isn’t connected.</p>
       </section>
     );
   }
@@ -302,7 +369,7 @@ function YourLoop() {
       {warnings.map((w) => <p key={w} className="caption" role="note">{w}</p>)}
       {error && <p className="caption error" role="alert">{error}</p>}
       {!connected && (
-        <p className="caption">Make a fine-grained token in GitHub under Settings → Developer settings → Fine-grained tokens. Give it only your LoopWorkspace repository, with Contents and Actions set to read and write. LoopStack reads your build and can start one. It doesn’t need your signing secrets, and it doesn’t change your fork until you add a feature and approve its changes. The token is kept in this Mac’s keychain.</p>
+        <p className="caption">Make a fine-grained token in GitHub under Settings → Developer settings → Fine-grained tokens. Give it only your LoopWorkspace repository, with Contents and Actions set to read and write. LoopStack reads your build and can start one. It doesn’t need your signing secrets, and it doesn’t change your fork until you add a feature and approve its changes. The token is saved on this Mac, locked with the Mac’s keychain.</p>
       )}
     </section>
   );
@@ -310,7 +377,7 @@ function YourLoop() {
 
 // ------------------------------------------------------------ AI connector (SAFE-7)
 
-function AiConnector() {
+export function AiConnector() {
   const ai = aiBridge();
   const announce = useAnnounce();
   const [cfg, setCfg] = useState<{ connected: boolean; model: string } | null>(null);
@@ -352,7 +419,53 @@ function AiConnector() {
         </form>
       )}
       {error && <p className="caption error" role="alert">{error}</p>}
-      <p className="caption">Used for Ask & build, billed to your Anthropic account (Claude Opus 5.5). Nothing is sent until you ask: a question sends a summary of your dashboard’s numbers, shown first; a feature request sends your description and the Loop files it needs. The key is kept in this Mac’s keychain.</p>
+      <p className="caption">Used for Ask & build, billed to your Anthropic account (Claude Opus 5.5). Nothing is sent until you ask: a question sends a summary of your dashboard’s numbers, shown first; a feature request sends your description and the Loop files it needs. The key is saved on this Mac, locked with the Mac’s keychain. Checking the key sends none of your health data.</p>
+    </section>
+  );
+}
+
+/** Optional: keep your tracking in a folder so your other devices can read it. Off until you choose one. */
+export function SyncFolder() {
+  const sync = syncBridge();
+  const announce = useAnnounce();
+  const [folder, setFolder] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { void sync?.config().then((r) => setFolder(r.ok ? r.folder : null)); }, [sync]);
+  if (!sync) return (
+    <section className="panel stack-8" aria-labelledby="sync-h">
+      <h2 id="sync-h" className="h3">Sync folder</h2>
+      <p className="small">Choosing a sync folder works in the LoopStack desktop app. In this preview you can still use Copy confidence data and Paste from another device under Suggestions.</p>
+    </section>
+  );
+  if (folder === undefined) return null;
+  const choose = async () => {
+    setError(null);
+    const r = await sync.choose();
+    if (!r.ok) { setError(r.error); return; }
+    if (r.canceled) return;
+    setFolder(r.folder);
+    if (r.error) { setError(r.error); return; }
+    announce('Sync folder chosen.');
+  };
+  const turnOff = async () => { await sync.clear(); setFolder(null); announce('Sync folder off.'); };
+  return (
+    <section className="panel stack-12" aria-labelledby="sync-h">
+      <h2 id="sync-h" className="h3">Sync folder</h2>
+      {folder ? (
+        <>
+          <p className="small">Your tracking is kept in <span className="strong" style={{ overflowWrap: 'anywhere' }}>{folder}</span> as one file per data source, named loopstack-tracked and the source. LoopStack reads and writes only those files there, and checks them when you come back to the app. Turning it off leaves the files where they are.</p>
+          <div className="row wrap">
+            <button type="button" className="quiet-btn" onClick={choose}>Choose another folder</button>
+            <button type="button" className="quiet-btn" onClick={turnOff}>Turn off</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="small">Choose a folder in iCloud Drive so your other devices can read it. It’s off until you pick one.</p>
+          <div><button type="button" className="quiet-btn" onClick={choose}>Choose a folder</button></div>
+        </>
+      )}
+      {error && <p className="caption error" role="alert">{error}</p>}
     </section>
   );
 }

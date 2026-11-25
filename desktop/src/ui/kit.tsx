@@ -2,8 +2,9 @@
 // the toolbar, the library panel, popovers and the one primary CTA; charts,
 // tiles and numbers sit on solid ground.
 import {
-  createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode,
+  createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { HourState } from '../data/current';
 
 // ------------------------------------------------------------ icons
@@ -18,10 +19,14 @@ export const ISettings = () => icon(<><path d="M3 6h8M15 6h2M3 14h2M9 14h8" /><c
 export const ILibrary = () => icon(<><rect x="3" y="3" width="6" height="6" rx="1.5" /><rect x="11" y="3" width="6" height="6" rx="1.5" /><rect x="3" y="11" width="6" height="6" rx="1.5" /><path d="M14 11v6M11 14h6" /></>);
 export const ISpark = () => icon(<><path d="M10 3v4M10 13v4M3 10h4M13 10h4" /><path d="M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2" /></>);
 export const IShare = () => icon(<path d="M10 3v10M6 7l4-4 4 4M4 12v4h12v-4" />);
+export const INote = () => icon(<><path d="M5 3.5h8l2.5 2.5V16.5H5z" /><path d="M8 9h5M8 12h5" /></>);
 export const ISuggest = () => icon(<><path d="M7.5 14.5h5M8 17h4" /><path d="M10 3a5 5 0 0 0-3 9c.6.5 1 1.2 1 2h4c0-.8.4-1.5 1-2a5 5 0 0 0-3-9z" /></>);
 export const IPdf = () => icon(<><path d="M5 3h7l3 3v11H5z" /><path d="M10 8v6M7.5 11.5L10 14l2.5-2.5" /></>);
 export const IMail = () => icon(<><rect x="3" y="5" width="14" height="10" rx="1.5" /><path d="M3.5 6l6.5 5 6.5-5" /></>);
+export const IRefresh = () => icon(<><path d="M16 10a6 6 0 1 1-1.8-4.3" /><path d="M16 3.5v3h-3" /></>);
 export const IEdit = () => icon(<><path d="M4 16h3l8.5-8.5-3-3L4 13z" /><path d="M11 6l3 3" /></>);
+export const ILock = () => <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M5.5 7V5.2a2.5 2.5 0 015 0V7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+export const IChevronDown = () => <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 export const IChevron = () => <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 export const IBack = () => icon(<path d="M12.5 4l-6 6 6 6" />);
 export const IClose = () => icon(<path d="M5 5l10 10M15 5L5 15" />);
@@ -206,33 +211,50 @@ export function Menu({ label, items, note, buttonClass = 'icon-btn', children }:
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();
-  const [flip, setFlip] = useState(false);
+  // The menu draws in a layer above the page (a portal), placed against its button, so a tile or
+  // panel with hidden overflow can never clip it. It flips left or up when it would leave the window.
+  const [pos, setPos] = useState<CSSProperties | null>(null);
 
   const close = useCallback((focus = true) => {
     setOpen(false);
+    setPos(null);
     if (focus) btn.current?.focus();
   }, []);
 
-  useLayoutEffect(() => {
-    if (!open || !menu.current || !btn.current) return;
+  const place = useCallback(() => {
+    if (!menu.current || !btn.current) return;
     const r = btn.current.getBoundingClientRect();
-    setFlip(r.left + menu.current.offsetWidth > window.innerWidth - 8);
-    menu.current.querySelector<HTMLButtonElement>('[role^="menuitem"]:not([disabled])')?.focus();
-  }, [open]);
+    const w = menu.current.offsetWidth;
+    const h = menu.current.offsetHeight;
+    const left = r.left + w > window.innerWidth - 8 ? Math.max(8, r.right - w) : r.left;
+    const top = r.bottom + 4 + h > window.innerHeight - 8 && r.top - 4 - h > 8 ? r.top - 4 - h : r.bottom + 4;
+    setPos({ position: 'fixed', top, left, right: 'auto' });
+  }, []);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+  // Focus the first item once the menu is placed and visible (a hidden element can't take focus).
+  useEffect(() => {
+    if (open && pos) menu.current?.querySelector<HTMLButtonElement>('[role^="menuitem"]:not([disabled])')?.focus();
+  }, [open, pos]);
 
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e: PointerEvent) => {
       if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) close(false);
     };
+    // A menu stays with its button: scrolling the page or resizing the window closes it.
+    const onMove = (e: Event) => { if (!menu.current?.contains(e.target as Node)) close(false); };
     window.addEventListener('pointerdown', onDown);
-    return () => window.removeEventListener('pointerdown', onDown);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('scroll', onMove, true); window.removeEventListener('resize', onMove); };
   }, [open, close]);
 
   const onKey = (e: KeyboardEvent) => {
     const els = [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not([disabled])') ?? [])];
     const i = els.indexOf(document.activeElement as HTMLButtonElement);
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); e.stopPropagation(); (e.key === 'Home' ? els[0] : els.at(-1))?.focus(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); els[(i + 1) % els.length]?.focus(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); els[(i - 1 + els.length) % els.length]?.focus(); }
     else if (e.key === 'Tab') close(false);
@@ -250,12 +272,12 @@ export function Menu({ label, items, note, buttonClass = 'icon-btn', children }:
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => { if (e.key.startsWith('Arrow')) e.stopPropagation(); }}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setOpen(true); } }}
       >
         {children}
       </button>
-      {open && (
-        <div ref={menu} id={id} role="menu" aria-label={label} className={`menu glass${flip ? ' flip' : ''}`} onKeyDown={onKey}>
+      {open && createPortal(
+        <div ref={menu} id={id} role="menu" aria-label={label} className="menu glass" style={pos ?? { position: 'fixed', top: 0, left: 0, visibility: 'hidden' }} onKeyDown={onKey}>
           {items.map((it) => (
             <button
               key={it.label}
@@ -271,10 +293,83 @@ export function Menu({ label, items, note, buttonClass = 'icon-btn', children }:
             </button>
           ))}
           {note && <p className="menu-note"><IPin />{note}</p>}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
+}
+
+/**
+ * The one in-tile choice control: a compact pill that shows the current value
+ * and opens a menu of options (radio items) in the layer above the page, so it
+ * never clips inside a tile. Use it for sort, range and mode choices in tile
+ * headers instead of a native select or a segmented control.
+ */
+export function TileSelect<T extends string>({ label, value, options, onChange }: {
+  /** What is being chosen, e.g. "Sort foods by". The button reads "<label>: <current>". */
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  const current = options.find((o) => o.value === value) ?? options[0];
+  return (
+    <Menu
+      label={`${label}: ${current.label}`}
+      buttonClass="tile-select"
+      items={options.map((o) => ({ label: o.label, checked: o.value === value, onSelect: () => onChange(o.value) }))}
+    >
+      <span className="tile-select-value">{current.label}</span>
+      <IChevronDown />
+    </Menu>
+  );
+}
+
+// ------------------------------------------------------------ numbers and live status (reference pass, Nov 22)
+
+/**
+ * A figure that counts up to its value when it first draws (and again whenever the period changes,
+ * since the dataset remounts), on the house ease-out over 400ms. Reduced motion: the value, at once.
+ * Screen readers get the final value only.
+ */
+export function Num({ value, digits = 0 }: { value: number | null | undefined; digits?: number }) {
+  const target = value ?? 0;
+  const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  // Opened from a tile (the ls-vt transition), the number arrives already settled: the tile
+  // showed it, so it never counts up from 0 into the panel (fuzzy-load board call, Nov 24).
+  const settled = reduce || (typeof document !== 'undefined' && document.documentElement.classList.contains('ls-vt'));
+  const [shown, setShown] = useState(settled ? target : 0);
+  // Counts up from 0 on first show, then tweens from whatever is on screen, so a new period
+  // moves each number in place instead of resetting it.
+  const last = useRef(settled ? target : 0);
+  last.current = shown;
+  useEffect(() => {
+    if (reduce || value == null) { setShown(target); return undefined; }
+    const from = last.current;
+    const t0 = performance.now();
+    // cubic-bezier(0.2, 0.8, 0, 1) is close to an ease-out quint for a number's settle.
+    const ease = (x: number) => 1 - Math.pow(1 - x, 5);
+    let raf = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / 400);
+      setShown(from + (target - from) * ease(p));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, reduce, value]);
+  if (value == null) return <>—</>;
+  const text = (v: number) => v.toFixed(digits);
+  return <><span aria-hidden="true" className="num-anim">{text(shown)}</span><span className="sr-only">{text(target)}</span></>;
+}
+
+/** Loop's last run as a live pill: a dot and "Looped 2 min ago"; amber once it's been more than 10 minutes. */
+export function LoopPill({ minutes }: { minutes: number | null }) {
+  if (minutes == null) return <span className="loop-pill off"><i aria-hidden="true" />Loop status unavailable</span>;
+  const stale = minutes > 10;
+  const when = minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
+  return <span className={`loop-pill${stale ? ' stale' : ''}`} title={stale ? 'Loop hasn’t reported in over 10 minutes' : undefined}><i aria-hidden="true" />Looped {when}</span>;
 }
 
 // ------------------------------------------------------------ measuring

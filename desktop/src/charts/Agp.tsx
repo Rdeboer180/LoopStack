@@ -1,9 +1,11 @@
 // The AGP curve and the five-band time-in-range bar, in the layout clinicians
 // already read (VIS-10). Solid ground, never glass (GLASS-1).
-import { AGP, READ } from '../data/current';
+import { AGP, PERIOD, READ } from '../data/current';
 import { hourTick } from '../data/derive';
+import { BANDS, VERY_HIGH } from '../data/ranges';
 
 const PAD = { L: 34, R: 10, T: 10, B: 20 };
+const BANDS_TEXT = '70 to 180';
 
 export function AgpChart({ W, H }: { W: number; H: number }) {
   const pw = W - PAD.L - PAD.R;
@@ -12,8 +14,14 @@ export function AgpChart({ W, H }: { W: number; H: number }) {
   const Y = (g: number) => PAD.T + ((300 - g) / 260) * ph;
   const band = (lo: readonly number[], hi: readonly number[]) =>
     `M${AGP.hours.map((h, i) => `${X(h).toFixed(1)} ${Y(hi[i]).toFixed(1)}`).join('L')}L${[...AGP.hours].reverse().map((h, i) => `${X(h).toFixed(1)} ${Y(lo[lo.length - 1 - i]).toFixed(1)}`).join('L')}Z`;
-  const minP5 = Math.min(...AGP.p5);
-  const label = `AGP, 14 days, glucose by time of day. The median stays between 124 and 162 mg/dL, inside the 70 to 180 range all day. The 5th percentile dips to ${minP5} mg/dL around 4pm, the only time it goes below 70. The 95th percentile peaks at 256 mg/dL around 8pm.`;
+  // Said from the curve itself, so it holds for any period or person.
+  const med = AGP.p50.filter((v) => v > 0);
+  const at = (arr: readonly number[], pick: (a: number, b: number) => boolean) => arr.reduce((bi, v, k) => (v > 0 && (bi < 0 || pick(v, arr[bi])) ? k : bi), -1);
+  const lo = at(AGP.p5, (a, b) => a < b), hi = at(AGP.p95, (a, b) => a > b);
+  const hourWord = (h: number) => hourTick(h % 24);
+  const label = med.length
+    ? `AGP, ${PERIOD.days} days, glucose by time of day. The median runs from ${Math.min(...med)} to ${Math.max(...med)} mg/dL. The 5th percentile is lowest, ${AGP.p5[lo]} mg/dL, around ${hourWord(AGP.hours[lo])}; the 95th is highest, ${AGP.p95[hi]} mg/dL, around ${hourWord(AGP.hours[hi])}. ${BANDS_TEXT} shaded.`
+    : `AGP, ${PERIOD.days} days: not enough readings to draw.`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label} style={{ display: 'block' }}>
       <rect x={PAD.L} y={Y(180)} width={pw} height={Y(70) - Y(180)} style={{ fill: 'var(--range-in-soft)' }} />
@@ -33,25 +41,40 @@ export function AgpChart({ W, H }: { W: number; H: number }) {
   );
 }
 
-export const bands = () => [
-  { key: 'very-high', label: 'Very high', range: 'over 250', pct: READ.veryHighPct, fill: 'var(--range-very-high)' },
-  { key: 'high', label: 'High', range: '181–250', pct: READ.highPct, fill: 'var(--range-high)' },
-  { key: 'in', label: 'In range', range: '70–180', pct: READ.inRangePct, fill: 'var(--range-in)' },
-  { key: 'low', label: 'Low', range: '54–69', pct: READ.lowPct, fill: 'var(--range-low)' },
-  { key: 'very-low', label: 'Very low', range: 'under 54', pct: READ.veryLowPct, fill: 'var(--range-very-low)' },
-] as const;
+/** Which bands to read: yours (Settings → Your ranges) for the dashboard, or the standard report's for the care-team review. */
+export type BandSet = 'mine' | 'standard';
+
+export const bands = (set: BandSet = 'standard') => {
+  if (set === 'standard') return [
+    { key: 'very-high', label: 'Very high', range: `over ${VERY_HIGH}`, pct: READ.veryHighPct, fill: 'var(--range-very-high)' },
+    { key: 'high', label: 'High', range: '181–250', pct: READ.highPct, fill: 'var(--range-high)' },
+    { key: 'in', label: 'In range', range: '70–180', pct: READ.inRangePct, fill: 'var(--range-in)' },
+    { key: 'low', label: 'Low', range: '54–69', pct: READ.lowPct, fill: 'var(--range-low)' },
+    { key: 'very-low', label: 'Very low', range: 'under 54', pct: READ.veryLowPct, fill: 'var(--range-very-low)' },
+  ] as const;
+  const m = READ.mine;
+  const b = BANDS;
+  // The phone's names from Profile → Targets: urgent low, low, in range.
+  return [
+    { key: 'very-high', label: 'Very high', range: `over ${VERY_HIGH}`, pct: m.veryHighPct, fill: 'var(--range-very-high)' },
+    { key: 'high', label: 'High', range: `${b.high + 1}–${VERY_HIGH}`, pct: m.highPct, fill: 'var(--range-high)' },
+    { key: 'in', label: 'In range', range: `${b.low}–${b.high}`, pct: m.inRangePct, fill: 'var(--range-in)' },
+    { key: 'low', label: 'Low', range: `${b.urgentLow}–${b.low - 1}`, pct: m.lowPct, fill: 'var(--range-low)' },
+    { key: 'very-low', label: 'Urgent low', range: `under ${b.urgentLow}`, pct: m.urgentPct, fill: 'var(--range-very-low)' },
+  ] as const;
+};
 
 /** The stacked five-band bar, high at the top as on the AGP report. Labels carry the numbers (COL-5). */
-export function TirBar({ W, H, labels = true }: { W: number; H: number; labels?: boolean }) {
+export function TirBar({ W, H, labels = true, set = 'standard' }: { W: number; H: number; labels?: boolean; set?: BandSet }) {
   const barW = Math.min(36, W * 0.3);
   // Tiny bands still get 3px so they stay visible.
   const min = 3;
-  const total = bands().reduce((t, b) => t + Math.max(min, (b.pct / 100) * H), 0);
+  const total = bands(set).reduce((t, b) => t + Math.max(min, (b.pct / 100) * H), 0);
   let y = 0;
-  const label = `Time in range, 14 days: ${bands().map((b) => `${b.label.toLowerCase()} ${b.pct}%`).join(', ')}.`;
+  const label = `Time in range, ${PERIOD.days} days: ${bands(set).map((b) => `${b.label.toLowerCase()} ${b.pct}%`).join(', ')}.`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label} style={{ display: 'block' }}>
-      {bands().map((b) => {
+      {bands(set).map((b) => {
         const h = (Math.max(min, (b.pct / 100) * H) / total) * H;
         const y0 = y;
         y += h;

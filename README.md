@@ -21,7 +21,7 @@ Everything stays on your Mac. Your Nightscout token, GitHub token and API key ar
 
 You need a Mac with Apple silicon (M1 or later) and a Nightscout site that your Loop uploads to.
 
-1. **Get the app.** Download the `LoopStack-….dmg` file from the [latest release](../../releases/latest), open it and drag LoopStack to Applications. Or [build it yourself](#build-from-source).
+1. **Get the app.** Download `LoopStack.dmg` from the [latest release](../../releases/latest), open it and drag LoopStack to Applications. Or [build it yourself](#build-from-source).
 2. **Open it the first time.** The app isn't notarized by Apple yet, so macOS stops the first launch. Open **System Settings → Privacy & Security**, scroll down to the LoopStack message and choose **Open Anyway**. You only do this once.
 3. **Try it with sample data.** LoopStack opens on a synthetic patient, so you can look around before connecting anything.
 4. **Connect your Nightscout.** Go to **Settings → Your data** and enter your Nightscout address and a read-only access token. LoopStack reads the last 30 days.

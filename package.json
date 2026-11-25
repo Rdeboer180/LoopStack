@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run --config vite.config.ts",
+    "dashboard": "node scripts/publish-dashboard.mjs",
     "system:review": "node scripts/system/review.mjs",
     "system:test": "node --test scripts/system/test/*.mjs",
     "system:mcp": "node scripts/system/mcp.mjs",

@@ -48,14 +48,23 @@ export interface DailyGlucose {
   p25: number | null;
   p75: number | null;
   p95: number | null;
+  /** In range, below and above your bands (Settings → Your ranges). */
   inRangePct: number | null;
   belowPct: number | null;
   abovePct: number | null;
+  /** Below your urgent low. */
+  urgentPct: number | null;
+  /** The same against the standard 70–180, for the care-team review. */
+  std: { inRangePct: number; belowPct: number; abovePct: number } | null;
   readings: number;
 }
 
 export interface Dataset {
   source: 'synthetic' | 'nightscout';
+  /** Loop's settings as LoopStack reads them: your Nightscout profile, or the phone app's record for the sample. Read only. */
+  THERAPY: import('@/data/loopTherapy').LoopTherapy & { from: 'nightscout' | 'sample' };
+  /** Lows and urgent lows over the period, as separate events (15 minutes under, the phone's rule), against your bands. */
+  LOWS: import('@/lib/metrics/hypoEvents').HypoReport;
   /** Shown beside the person's name: "synthetic", or the Nightscout host. */
   sourceLabel: string;
   /** When the data was read, ISO; null for the synthetic set. */
@@ -110,10 +119,13 @@ export interface Dataset {
     trend: string;
     trendLabel: string;
     ageMin: number;
+    statusAt?: string | null;
     activeInsulinU: number | null;
     activeCarbsG: number | null;
     points: readonly Pt[];
     prediction: readonly Pt[];
+    /** Every CGM reading of the last 24 hours, hours relative to today's midnight (yesterday is negative), for the 3/6/12/24h view. */
+    day?: readonly Pt[];
   };
   /** The day's trend heads-up (PROD-2). Null when no weekday stretch clears the bar. */
   HEADS_UP: {
@@ -126,6 +138,7 @@ export interface Dataset {
     /** [start, end) hours */
     stretch: readonly [number, number];
   } | null;
+  WEEKDAY_GRID: import('@/lib/metrics/dayHourGrid').DayHourGrid;
   /** Median glucose on the tracked weekday, for the heads-up chart. */
   AVG_DAY: readonly Pt[];
   CARE_NOTE: { from: string; date: string; text: string } | null;
@@ -149,11 +162,15 @@ export interface Dataset {
     highPct: number;
     veryHighPct: number;
     inRangeSinceLastVisit: number | null;
+    /** The equal-length period before, scored the same way (your bands for inRangePct); null when it had too little sensor data. */
+    prev: { inRangePct: number; meanMgdl: number; gmiPct: number; cvPct: number } | null;
     automationPct: number;
     automationGaps: string;
     gmiPct: number;
     cvPct: number;
     meanMgdl: number;
+    /** The five bands against your own ranges (urgent low, low, in range, high, very high). */
+    mine: import('./ranges').BandRead;
   };
   AGP: { hours: readonly number[]; p5: readonly number[]; p25: readonly number[]; p50: readonly number[]; p75: readonly number[]; p95: readonly number[] };
   INSULIN: { totalDailyU: number; algorithmPct: number; userPct: number; overrideHoursPerWeek: number; presets: string };
@@ -167,6 +184,8 @@ export interface Dataset {
     cob: readonly number[];
     exercise: Readonly<Record<number, number>>;
     weeks: number;
+    /** Days that went into it, when it covers more than one weekday (every day, weekdays, weekends). */
+    days?: number;
     stretch: readonly [number, number] | null;
   };
   CHANGES: readonly SettingsChange[];
@@ -204,5 +223,6 @@ export interface Dataset {
   /** What LoopStack's readings point at, settings and favorite foods, with a confidence grade each (SAFE-5a). */
   SUGGESTIONS: readonly import('./suggestions').Suggestion[];
   /** The day tracker for each weekday (0 = Sunday … 6 = Saturday) and 7 = every day; null where there isn't enough data. */
+  /** 0–6 Sunday to Saturday, 7 every day, 8 weekdays (Mon–Fri), 9 weekends. */
   DAY_BY_WEEKDAY: readonly (Dataset['DAY'] | null)[];
 }

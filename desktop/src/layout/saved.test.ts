@@ -7,6 +7,18 @@ const memory = (): KV => {
   return { getItem: k => m.get(k) ?? null, setItem: (k, v) => { m.set(k, v); }, removeItem: k => { m.delete(k); } };
 };
 describe('saved dashboard views', () => {
+  it('updates the unsaved Everyday preset while preserving a named snapshot of the older layout', () => {
+    const store = memory();
+    const older = loadWorkspace(null);
+    older.current.layout.tiles = older.current.layout.tiles.filter(t => t.id !== 'hour-evidence' && t.id !== 'review-queue');
+    const named = saveNewView(older, 'Original', 'original');
+    persistWorkspace(store, named);
+    expect(loadWorkspace(store)).toEqual(named);
+    persistWorkspace(store, { ...named, activeId: null });
+    const updated = loadWorkspace(store);
+    expect(updated.current.layout).toEqual(defaultLayout());
+    expect(updated.saved).toEqual(named.saved);
+  });
   it('migrates the existing layout without losing order, size or visibility', () => {
     const store = memory();
     const layout = resize(moveTo(remove(defaultLayout(), 'device-life'), 'meals', 0), 'meals', { w: 12, h: 4 });

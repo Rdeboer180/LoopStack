@@ -192,6 +192,23 @@ export function observeMeals(input: {
   const csf = seedCsf(flatIsf(input.therapy), flatCarbRatio(input.therapy));
   const { steps } = computeDeviations(input);
   const stepByMs = new Map(steps.map((s) => [s.ms, s]));
+  // Steps are in time order: a binary search finds the one within half a step of
+  // `at` (the same match a linear scan finds), so months of history stay fast.
+  const nearestStep = (at: number) => {
+    let lo = 0;
+    let hi = steps.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (steps[mid].ms < at) lo = mid + 1;
+      else hi = mid;
+    }
+    const half = (STEP_MINUTES / 2) * 60_000;
+    for (const i of [lo - 1, lo]) {
+      const x = steps[i];
+      if (x && Math.abs(x.ms - at) < half) return x;
+    }
+    return undefined;
+  };
 
   // Sittings, not raw entries: dessert ninety minutes after the plate is the
   // same physiological event, and reading it as an overlap would throw away
@@ -234,9 +251,7 @@ export function observeMeals(input: {
     for (let k = 1; k <= stepCount; k += 1) {
       const at = t + k * STEP_MINUTES * 60_000;
       // CGM stamps rarely land exactly on the grid; take the nearest step.
-      const s =
-        stepByMs.get(at) ??
-        steps.find((x) => Math.abs(x.ms - at) < (STEP_MINUTES / 2) * 60_000);
+      const s = stepByMs.get(at) ?? nearestStep(at);
       if (s) {
         deviations.push(s.deviation);
         found += 1;

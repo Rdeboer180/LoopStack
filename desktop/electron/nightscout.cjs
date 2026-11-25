@@ -17,6 +17,15 @@ const path = require('node:path');
 const DAY = 24 * 3600 * 1000;
 const ENTRY_DAYS = 84; // 12 weeks: the weekday heads-ups need them
 const DETAIL_DAYS = 35; // treatments and Loop status: 14 days, the 14 before, and a week spare
+/** The periods the person can pick in the top bar. A longer period reads further back. */
+const PERIODS = [14, 30, 90, 180];
+const periodOf = (v) => (PERIODS.includes(Number(v)) ? Number(v) : 14);
+/** Run request factories a few at a time. */
+async function inBatches(jobs, size = 4) {
+  const out = [];
+  for (let i = 0; i < jobs.length; i += size) out.push(...(await Promise.all(jobs.slice(i, i + size).map((j) => j()))));
+  return out;
+}
 const TIMEOUT = 45_000;
 
 const file = () => path.join(app.getPath('userData'), 'nightscout.json');
@@ -58,8 +67,9 @@ async function get(cfg, p, params = {}) {
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
   if (cfg.token) u.searchParams.set('token', cfg.token);
   const res = await fetch(u, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT), redirect: 'error' });
-  if (res.status === 401 || res.status === 403) throw new Error('Nightscout said no: check the access token (it needs the readable role).');
-  if (!res.ok) throw new Error(`Nightscout answered ${res.status} for ${p}.`);
+  if (res.status === 401 || res.status === 403) throw new Error('Nightscout didn’t accept that token. Make one with the readable role (steps below). If you pasted your API secret, LoopStack doesn’t use it.');
+  if (res.status === 404) throw new Error('Nothing that looks like Nightscout at this address. Check the spelling: it’s the address you open in a browser to see your Nightscout.');
+  if (!res.ok) throw new Error('Nightscout didn’t answer that request. Open it in a browser to check it’s running, then try again.');
   return res.json();
 }
 
@@ -135,28 +145,90 @@ function trimProfiles(docs) {
   return out;
 }
 
-async function readAll(cfg) {
+// ---------------------------------------------------------------- on-disk cache
+// What was read before stays on this Mac (the app's private folder, owner-only), already
+// trimmed to the few fields the dashboard uses. Each read then asks Nightscout only for what's
+// new since, plus the days the cache doesn't cover yet. Cleared on disconnect.
+const CACHE_DAYS = 190;
+const OVERLAP = 2 * 3600 * 1000; // re-read the last 2 hours: late uploads and edits land there
+const cacheFile = () => path.join(app.getPath('userData'), 'nightscout-cache.json');
+function readCache(url) {
+  try {
+    const c = JSON.parse(fs.readFileSync(cacheFile(), 'utf8'));
+    return c && c.url === url && c.version === 1 ? c : null;
+  } catch { return null; }
+}
+function writeCache(c) {
+  try {
+    fs.mkdirSync(path.dirname(cacheFile()), { recursive: true });
+    fs.writeFileSync(cacheFile(), JSON.stringify(c), { mode: 0o600 });
+  } catch { /* a cache that can't be written just means a full read next time */ }
+}
+const keyE = (e) => String(e.date);
+const keyT = (t) => `${t.created_at}|${t.eventType ?? ''}|${t.insulin ?? ''}|${t.carbs ?? ''}|${t.rate ?? ''}`;
+const keyS = (d) => String(d.created_at);
+/** Newer copies win; anything older than the cache window is dropped. */
+function merge(old, fresh, key, timeOf, floor) {
+  const m = new Map();
+  for (const x of old) if (timeOf(x) >= floor) m.set(key(x), x);
+  for (const x of fresh) if (timeOf(x) >= floor) m.set(key(x), x);
+  return [...m.values()];
+}
+
+/** The time ranges to ask for: before what's cached, and after it (with an overlap). */
+function gaps(from, now, covered) {
+  if (!covered) return [[from, now + 60_000]];
+  const out = [];
+  if (from < covered.from) out.push([from, covered.from]);
+  out.push([Math.max(from, covered.to - OVERLAP), now + 60_000]);
+  return out;
+}
+
+async function readAll(cfg, periodDays = 14) {
   const now = Date.now();
+  const days = periodOf(periodDays);
   const iso = (ms) => new Date(ms).toISOString();
-  const entriesFrom = now - ENTRY_DAYS * DAY;
-  const detailFrom = now - DETAIL_DAYS * DAY;
-  // Loop uploads every 5 minutes: a week of devicestatus is ~2,000 documents, so read it a week at a time.
-  const weeks = [];
-  for (let t = detailFrom; t < now; t += 7 * DAY) weeks.push([t, Math.min(t + 7 * DAY, now + 60_000)]);
-  const [entries, treatments, profiles, ...statusWeeks] = await Promise.all([
-    get(cfg, '/api/v1/entries/sgv.json', { 'find[date][$gte]': entriesFrom, count: 30000 }),
-    get(cfg, '/api/v1/treatments.json', { 'find[created_at][$gte]': iso(detailFrom), count: 20000 }),
-    get(cfg, '/api/v1/profile.json', { count: 500 }),
-    ...weeks.map(([a, b]) => get(cfg, '/api/v1/devicestatus.json', { 'find[created_at][$gte]': iso(a), 'find[created_at][$lt]': iso(b), count: 4000 })),
+  const entriesFrom = now - Math.max(ENTRY_DAYS, days + 7) * DAY;
+  const detailFrom = now - Math.max(DETAIL_DAYS, days + 7) * DAY;
+  const cache = readCache(cfg.url);
+  // Readings and treatments in 30-day slices; Loop status a week at a time (Loop uploads every
+  // 5 minutes, so a week is ~2,000 documents). A few requests at a time, so a long read doesn't
+  // flood a small Nightscout.
+  const slices = ([from, to], step) => { const out = []; for (let t = from; t < to; t += step) out.push([t, Math.min(t + step, to)]); return out; };
+  const eRanges = gaps(entriesFrom, now, cache?.entriesCovered).flatMap((r) => slices(r, 30 * DAY));
+  const dRanges = gaps(detailFrom, now, cache?.detailCovered);
+  const [profiles, ...parts] = await inBatches([
+    () => get(cfg, '/api/v1/profile.json', { count: 500 }),
+    ...eRanges.map(([a, b]) => () => get(cfg, '/api/v1/entries/sgv.json', { 'find[date][$gte]': a, 'find[date][$lt]': b, count: 12000 }).then((x) => ({ kind: 'e', x }))),
+    ...dRanges.flatMap((r) => slices(r, 30 * DAY)).map(([a, b]) => () => get(cfg, '/api/v1/treatments.json', { 'find[created_at][$gte]': iso(a), 'find[created_at][$lt]': iso(b), count: 12000 }).then((x) => ({ kind: 't', x }))),
+    ...dRanges.flatMap((r) => slices(r, 7 * DAY)).map(([a, b]) => () => get(cfg, '/api/v1/devicestatus.json', { 'find[created_at][$gte]': iso(a), 'find[created_at][$lt]': iso(b), count: 4000 }).then((x) => ({ kind: 's', x }))),
   ]);
-  const statuses = statusWeeks.flat().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const of = (k) => parts.filter((p) => p.kind === k).flatMap((p) => (Array.isArray(p.x) ? p.x : []));
+  const floor = now - CACHE_DAYS * DAY;
+  const entries = merge(cache?.entries ?? [], of('e').map(trimEntry).filter((e) => e.sgv != null && Number.isFinite(e.date)), keyE, (e) => e.date, floor)
+    .sort((a, b) => a.date - b.date);
+  const treatments = merge(cache?.treatments ?? [], of('t').map(trimTreatment).filter((t) => t.created_at), keyT, (t) => Date.parse(t.created_at), floor);
+  // Loop status: the newest keeps its prediction (Glucose now draws it); older ones don't need it.
+  const statuses = merge(cache?.devicestatus ?? [], of('s').map((d) => trimStatus(d, true)), keyS, (d) => Date.parse(d.created_at), floor)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .map((d, i) => (i === 0 ? d : { ...d, predicted: null }));
+  const span = (covered, from) => ({ from: Math.min(from, covered?.from ?? from), to: now });
+  writeCache({
+    version: 1, url: cfg.url,
+    entriesCovered: span(cache?.entriesCovered, entriesFrom),
+    detailCovered: span(cache?.detailCovered, detailFrom),
+    entries, treatments, devicestatus: statuses,
+  });
+  const coveredDays = Math.floor((now - Math.min(detailFrom, cache?.detailCovered?.from ?? detailFrom)) / DAY) - 7;
   return {
     site: new URL(cfg.url).host,
     name: cfg.name,
     fetchedAt: new Date(now).toISOString(),
-    entries: entries.map(trimEntry).filter((e) => e.sgv != null && Number.isFinite(e.date)),
-    treatments: treatments.map(trimTreatment).filter((t) => t.created_at),
-    devicestatus: statuses.map((d, i) => trimStatus(d, i === 0)),
+    // The longest period this read can build, so a shorter one needs no new read.
+    periodDays: Math.max(days, ...PERIODS.filter((p) => p <= coveredDays)),
+    entries,
+    treatments,
+    devicestatus: statuses,
     profiles: trimProfiles(profiles),
   };
 }
@@ -174,28 +246,29 @@ function register() {
       const token = typeof input?.token === 'string' && input.token.trim() ? input.token.trim() : prev.url === url ? prev.token : '';
       const cfg = { url, token, name: String(input?.name ?? '').trim().slice(0, 40) };
       const status = await get(cfg, '/api/v1/status.json');
-      if (!status || typeof status !== 'object' || !('status' in status || 'version' in status)) throw new Error('That address answered, but not like a Nightscout site.');
+      if (!status || typeof status !== 'object' || !('status' in status || 'version' in status)) throw new Error('Nothing that looks like Nightscout at this address. Check the spelling: it’s the address you open in a browser to see your Nightscout.');
       // A readable token must be able to see entries, not just the status page.
       await get(cfg, '/api/v1/entries/sgv.json', { count: 1 });
       writeConfig(cfg);
       return { ok: true, version: status.version || null };
     } catch (err) {
-      return { ok: false, error: err?.name === 'TimeoutError' ? 'Nightscout didn’t answer in time.' : String(err?.message || err) };
+      return { ok: false, error: err?.name === 'TimeoutError' ? 'Your Nightscout didn’t answer. Some hosts go to sleep: open it in a browser, then try again.' : String(err?.message || err) };
     }
   });
-  ipcMain.handle('ns:fetch', async () => {
+  ipcMain.handle('ns:fetch', async (_e, opts) => {
     const cfg = readConfig();
     if (!cfg.url) return { ok: false, error: 'Not connected.' };
     try {
-      return { ok: true, raw: await readAll(cfg) };
+      return { ok: true, raw: await readAll(cfg, opts?.days) };
     } catch (err) {
-      return { ok: false, error: err?.name === 'TimeoutError' ? 'Nightscout didn’t answer in time.' : String(err?.message || err) };
+      return { ok: false, error: err?.name === 'TimeoutError' ? 'Your Nightscout didn’t answer. Some hosts go to sleep: open it in a browser, then try again.' : String(err?.message || err) };
     }
   });
   ipcMain.handle('ns:disconnect', () => {
     try { fs.rmSync(file(), { force: true }); } catch { /* already gone */ }
+    try { fs.rmSync(cacheFile(), { force: true }); } catch { /* no cache */ }
     return { ok: true };
   });
 }
 
-module.exports = { register, normalizeUrl, readAll };
+module.exports = { register, normalizeUrl, readAll, PERIODS };

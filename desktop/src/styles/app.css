@@ -5,6 +5,8 @@
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
+/* The shell scrolls inside .content; the window itself never does (an off-screen live region once nudged it 1px). */
+html, body { overflow: hidden; }
 
 body {
   background: var(--surface-1);
@@ -24,7 +26,7 @@ input, textarea { font: inherit; color: inherit; }
 ul, ol { list-style: none; }
 :focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
 svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sr-only { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .skip { position: absolute; left: -9999px; top: 8px; z-index: 50; background: var(--surface-0); padding: 10px 14px; border-radius: var(--radius-input); }
 .skip:focus { left: 8px; }
 
@@ -173,7 +175,12 @@ svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
   font-size: 14px;
   font-weight: 600;
 }
-.toggle-btn[aria-pressed='true'] { border-color: var(--ink-900); background: var(--ink-900); color: var(--surface-0); }
+.toggle-btn.icon-only { width: 44px; padding: 0; justify-content: center; }
+.toggle-btn:disabled { cursor: default; }
+.toggle-btn.busy svg { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .toggle-btn.busy svg { animation: none; } .toggle-btn.busy { opacity: 0.6; } }
+.toggle-btn[aria-pressed='true'], .toggle-btn.on { border-color: var(--ink-900); background: var(--ink-900); color: var(--surface-0); }
 
 .cta {
   min-height: 44px;
@@ -260,7 +267,7 @@ svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 .menu, .popover { position: absolute; z-index: 30; border-radius: 18px; padding: 6px; }
 .menu { top: calc(100% + 4px); left: 0; min-width: 220px; display: flex; flex-direction: column; }
 .menu.flip { left: auto; right: 0; }
-.menu [role='menuitem'] {
+.menu [role='menuitem'], .menu [role='menuitemradio'] {
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -272,7 +279,9 @@ svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
   font-weight: 500;
   text-align: left;
 }
-.menu [role='menuitem']:hover:not(:disabled), .menu [role='menuitem']:focus-visible { background: var(--surface-0); }
+.menu [role='menuitem']:hover:not(:disabled), .menu [role='menuitem']:focus-visible,
+.menu [role='menuitemradio']:hover:not(:disabled), .menu [role='menuitemradio']:focus-visible { background: var(--surface-0); }
+.menu .radio { display: inline-block; width: 18px; color: var(--brand-primary-hover, var(--ink-900)); }
 .menu [role='menuitem']:disabled { color: var(--ink-500); }
 .menu .hint { font-size: 12px; color: var(--ink-700); }
 .menu-note { display: flex; gap: 6px; align-items: flex-start; padding: 8px 12px 6px; font-size: 12px; line-height: 16px; color: var(--ink-700); border-top: 1px solid var(--ink-200); margin-top: 4px; max-width: 240px; }
@@ -382,6 +391,7 @@ svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
   border: 1px solid var(--ink-200);
   text-align: left;
 }
+.lib-row svg { flex: none; }
 .lib-row[aria-pressed='true'] { border-color: var(--ink-900); box-shadow: inset 0 0 0 1px var(--ink-900); }
 .lib-row.static { background: transparent; }
 
@@ -423,7 +433,8 @@ svg text { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 .tir-legend li.in { color: var(--ink-900); font-weight: 600; }
 .tir-legend .num { text-align: right; }
 
-.device { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 12px; }
+.device { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 8px 12px; }
+.device .caption { white-space: normal; }
 .device li { display: flex; flex-direction: column; gap: 2px; }
 .device b { font-size: 18px; line-height: 24px; font-weight: 600; white-space: nowrap; }
 
@@ -447,7 +458,7 @@ textarea {
 }
 
 .sample { font-size: 12px; line-height: 16px; font-weight: 600; background: var(--surface-0); border: 1px solid var(--ink-200); border-radius: var(--radius-pill); padding: 3px 10px; white-space: nowrap; }
-.readout { position: absolute; z-index: 1; top: 4px; width: 260px; height: 32px; padding: 0 12px; border-radius: var(--radius-pill); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; white-space: nowrap; transition: left var(--dur-screen) var(--ease); }
+.readout { position: absolute; z-index: 1; top: 4px; left: 0; width: 260px; max-width: 100%; height: 32px; padding: 0 12px; border-radius: var(--radius-pill); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; white-space: nowrap; transition: transform var(--dur-fast) var(--ease); }
 .scrub { position: absolute; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; opacity: 0; cursor: pointer; }
 .scrub::-webkit-slider-runnable-track { height: 100%; background: transparent; }
 .scrub::-webkit-slider-thumb { -webkit-appearance: none; width: var(--thumb-w, 12px); height: 100%; background: transparent; border: 0; }
@@ -568,6 +579,7 @@ textarea {
 .menu [role='menuitemradio'][aria-checked='true'] { font-weight: 600; }
 .menu .divide { border-top: 1px solid var(--ink-200); margin-top: 4px; padding-top: 4px; }
 .menu .radio { display: inline-block; width: 16px; font-size: 10px; }
+/* Tiles never scroll on their own: the page scrolls. Each tile's minimum size and glance fit its content (LAYOUT-4). */
 .tile-body { overflow: hidden; }
 .editing .tile { overflow: visible; }
 .editing .tile:focus-within { z-index: 5; }
@@ -682,11 +694,16 @@ textarea {
 .size-chip { font-size: 11px; line-height: 14px; font-weight: 600; color: var(--ink-700); background: var(--surface-0); border: 1px solid var(--ink-200); border-radius: var(--radius-pill); padding: 1px 7px; white-space: nowrap; }
 .tile-preview { position: relative; flex: 1; min-height: 0; overflow: hidden; pointer-events: none; user-select: none; }
 .tile-preview > .preview-zoom { zoom: 0.5; width: 200%; height: 200%; padding: 0 16px 14px; display: flex; flex-direction: column; }
-.tile.arrange .resize-handle { position: absolute; right: 4px; bottom: 4px; min-width: 32px; min-height: 32px; border-radius: 10px; box-shadow: var(--shadow-card); }
+.tile.arrange .resize-handle { position: absolute; right: 2px; bottom: 2px; min-width: 24px; min-height: 24px; padding: 2px; border-radius: 8px; background: transparent; border-color: transparent; box-shadow: none; color: var(--ink-500); }
+.tile.arrange:hover .resize-handle, .tile.arrange:focus-within .resize-handle, .tile.arrange.resizing .resize-handle { background: var(--surface-0); border-color: var(--ink-200); color: var(--ink-900); }
+.tile.arrange { container-type: inline-size; }
+@container (max-width: 340px) { .size-chip { display: none; } }
 .tile.arrange.dragging { border-color: var(--ink-900); box-shadow: 0 10px 28px color-mix(in srgb, var(--ink-900) 16%, transparent); }
 .tile.arrange.resizing { border-color: var(--accent-info); box-shadow: 0 0 0 2px var(--accent-info-soft); }
 .canvas.arrange-grid { background-image: repeating-linear-gradient(to right, transparent 0, transparent calc((100% - 11 * var(--gap)) / 12), var(--surface-1) calc((100% - 11 * var(--gap)) / 12), var(--surface-1) calc((100% - 11 * var(--gap)) / 12 + var(--gap))); border-radius: var(--radius-card); }
-@media (max-width: 1100px) { .dash.editing { flex-direction: column; } .tile-library { width: 100%; position: static; max-height: none; } }
+/* The tile library stays a column beside the grid down to 900px, so Add and Done are always in reach. */
+@media (max-width: 1100px) { .tile-library { width: 248px; } }
+@media (max-width: 900px) { .dash.editing { flex-direction: column; } .tile-library { width: 100%; position: static; max-height: none; } }
 
 /* ------------------------------------------------------------ care-team review: save as PDF, email
    The print layout renders off screen at paper width so its charts measure
@@ -719,7 +736,7 @@ textarea {
 }
 
 /* ------------------------------------------------------------ previews before a connection */
-.preview-note { border-left: 3px solid var(--accent-info); padding-left: var(--space-3); }
+.preview-note { background: var(--accent-info-soft); }
 
 /* ------------------------------------------------------------ care team: contact and notes */
 .care-face { gap: var(--space-2); }
@@ -814,3 +831,290 @@ a.quiet-btn { text-decoration: none; color: var(--ink-900); }
 .earlier-notes { border-top: 1px solid var(--ink-200); padding-top: var(--space-3); }
 .earlier-notes > summary { cursor: pointer; }
 .earlier-notes[open] > summary { margin-bottom: var(--space-2); }
+
+/* TileSelect: the one in-tile choice control (sort, range, mode). A pill that opens a menu above the page. */
+.tile-select { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 100%; padding: 6px 10px 6px 12px; border: 1px solid var(--ink-200); border-radius: var(--radius-pill); background: var(--surface-0); color: var(--ink-900); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tile-select:hover { background: var(--surface-1); }
+.tile-select:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+.tile-select[aria-expanded='true'] { border-color: var(--ink-500); }
+.tile-select-value { overflow: hidden; text-overflow: ellipsis; }
+@media (pointer: coarse) { .tile-select { min-height: 44px; } }
+
+/* Dashboard undo: one step back for a preset, reset, removed tile or saved-layout switch. */
+.undo-bar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-2) var(--space-5) 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-input); background: var(--surface-1); border: 1px solid var(--ink-200); }
+.undo-bar .small { margin-right: auto; }
+.settings-appearance { margin-left: 0; padding-bottom: 0; }
+#layouts-heading:focus { outline: none; }
+#layouts-heading:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+
+/* Review: once a reply is sent, it replaces the buttons. */
+.decide-sent { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-input); background: var(--brand-primary-soft); border: 1px solid var(--glass-green-border); }
+.decide-sent .small { margin: 0; }
+.tile-preview.summary { padding: 10px 12px; }
+.tile-preview.summary .small { margin: 0; color: var(--ink-700); }
+.lib-detail:focus { outline: none; }
+
+/* The review period, top bar (LAYOUT-7): one calm pill, the period and its dates; choices in a menu. */
+.period-control { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.period-pill { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 0 14px; border-radius: var(--radius-pill); border: 1px solid var(--ink-200); background: var(--surface-1); color: var(--ink-900); font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.period-pill:hover { background: var(--surface-0); }
+.period-pill:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+.period-pill[aria-expanded='true'] { border-color: var(--ink-500); }
+.period-pill .period-dates { font-weight: 500; color: var(--ink-600); font-variant-numeric: tabular-nums; }
+@media (max-width: 1180px) { .period-pill .period-prefix { display: none; } }
+
+/* Sample data: one kind line under the top bar, never a chip in it. */
+.sample-note { margin: 0; padding: 8px var(--space-5); background: var(--brand-primary-soft); border-bottom: 1px solid var(--glass-green-border); color: var(--ink-700); font-size: 13px; line-height: 18px; }
+.link-btn { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink-900); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link-btn:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; border-radius: 4px; }
+
+/* Focused tile views: the bar, the day picker and tables (shared by every expanded tile). */
+.focus-bar { display: flex; flex-direction: column; gap: var(--space-2); }
+.focus-bar-controls { gap: var(--space-2) var(--space-3); align-items: center; }
+.focus-table-wrap { overflow-x: auto; }
+.focus-table td.low { color: var(--range-low-ink, var(--range-low)); font-weight: 600; }
+.focus-table td.high { color: var(--range-high-ink, var(--ink-900)); font-weight: 600; }
+.focus-table tr.muted th, .focus-table tr.muted td { color: var(--ink-500); }
+
+/* Hour by hour: 24 cells shaded by where each hour's median sat (in range calm, low and high marked). */
+.hbh-strip { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; flex: 1; min-height: 40px; }
+.hbh-cell { position: relative; border-radius: 4px; background: var(--range-in-soft); display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-height: 32px; }
+.hbh-cell.low { background: var(--range-low); }
+.hbh-cell.high { background: var(--range-high); }
+.hbh-cell.none { background: var(--surface-1); outline: 1px dashed var(--ink-200); outline-offset: -1px; }
+.hbh-hour { position: absolute; bottom: -16px; font-size: 10px; color: var(--ink-700); white-space: nowrap; }
+.hbh-strip { margin-bottom: 20px; }
+.hbh-strip.big { min-height: 160px; }
+.hbh-strip.big .hbh-cell { min-height: 140px; }
+.hbh-val { font-size: 11px; font-weight: 600; color: var(--ink-900); padding-bottom: 6px; writing-mode: vertical-rl; transform: rotate(180deg); }
+.hbh-cell.low .hbh-val { color: var(--surface-0); }
+
+/* Calm surface (reference pass, Nov 22): tiles float on a slightly deeper canvas with a soft shadow
+   instead of a border. Dark mode keeps a hairline, since shadows don't read on dark ground. */
+:root { --canvas: var(--surface-2); --shadow-tile: 0 1px 2px rgba(13, 20, 26, 0.04), 0 10px 28px rgba(13, 20, 26, 0.06); }
+:root[data-theme='dark'] { --canvas: var(--surface-1); --shadow-tile: none; }
+.main-col { background: var(--canvas); }
+.tile { border-color: transparent; box-shadow: var(--shadow-tile); }
+:root[data-theme='dark'] .tile { border-color: var(--ink-200); }
+.editing .tile { border-color: transparent; }
+
+/* Big numbers (reference pass): tabular, the unit small beside it, the label small and grey above. */
+.current-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.face.current-glance .current-reading { display: inline-flex; align-items: baseline; gap: 6px; font-size: clamp(2.5rem, 4.2vw, 3.75rem); line-height: 1; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.face.current-glance .current-reading small { font-size: 15px; font-weight: 500; color: var(--ink-600); letter-spacing: 0; }
+.current-trend { font-size: 0.6em; color: var(--ink-700); }
+.stat-stack { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stat-stack > div { padding: 6px 12px; border-left: 1px solid var(--ink-200); min-width: 0; }
+.stat-stack > div:first-child { padding-left: 0; border-left: 0; }
+.stat-stack dt { font-size: 12px; line-height: 16px; color: var(--ink-600); white-space: normal; }
+.stat-stack dd { margin: 2px 0 0; font-size: 22px; line-height: 28px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-900); white-space: nowrap; }
+.stat-stack dd small { font-size: 13px; font-weight: 500; color: var(--ink-600); margin-left: 2px; }
+.num-anim { font-variant-numeric: tabular-nums; }
+
+/* Loop's last run, as a live pill. */
+.loop-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--surface-1); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-900); white-space: nowrap; }
+.loop-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-primary); box-shadow: 0 0 0 3px var(--brand-primary-soft); }
+.loop-pill.stale i { background: var(--range-high); box-shadow: 0 0 0 3px var(--range-high-soft); }
+.loop-pill.off { color: var(--ink-600); }
+.loop-pill.off i { background: var(--ink-300); box-shadow: none; }
+.big-num { font-variant-numeric: tabular-nums; }
+.big-num small { font-size: 0.45em; font-weight: 500; color: var(--ink-600); margin-left: 2px; letter-spacing: 0; }
+.device b { font-variant-numeric: tabular-nums; }
+.device b small { font-size: 13px; font-weight: 500; color: var(--ink-600); }
+.device .label { color: var(--ink-600); }
+
+/* A period loading: tiles soften behind a skeleton shimmer, with one line saying what's read. */
+.period-loading { margin: 0 0 var(--space-3); font-size: 13px; line-height: 18px; color: var(--ink-600); }
+.canvas.loading .tile-body { opacity: 0.25; transition: opacity 200ms cubic-bezier(0.2, 0.8, 0, 1); }
+.canvas.loading .tile::after { content: ''; position: absolute; inset: 56px 16px 16px; border-radius: 12px; background: linear-gradient(90deg, var(--surface-1) 0%, var(--surface-2) 50%, var(--surface-1) 100%); background-size: 200% 100%; animation: tile-shimmer 1.2s linear infinite; opacity: 0.8; pointer-events: none; }
+@keyframes tile-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .canvas.loading .tile::after { animation: none; } }
+
+/* Setup stepper (first run) */
+.setup-overlay { position: fixed; inset: 0; z-index: 80; overflow-y: auto; background: var(--canvas); display: flex; justify-content: center; padding: var(--space-6) var(--space-4); }
+.setup-card { width: min(760px, 100%); display: flex; flex-direction: column; gap: var(--space-4); align-self: flex-start; }
+.setup-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.setup-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.setup-steps li { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px 0 6px; border-radius: var(--radius-pill); font-size: 13px; font-weight: 600; color: var(--ink-600); }
+.setup-steps .on { background: var(--surface-0); color: var(--ink-900); box-shadow: var(--shadow-tile); }
+.setup-steps .dot { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.setup-steps .done .dot { background: var(--brand-primary-soft); color: var(--ink-900); }
+.setup-preset:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+@media (max-width: 900px) { .setup-steps .lbl { display: none; } .setup-steps .on .lbl { display: inline; } }
+.setup-body { background: var(--surface-0); border-radius: var(--radius-card); box-shadow: var(--shadow-tile); padding: var(--space-5); }
+#setup-h:focus { outline: none; }
+.setup-foot { display: flex; align-items: center; gap: var(--space-3); }
+.setup-need { margin: 0; text-align: right; }
+.setup-presets { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.setup-preset { width: 100%; display: flex; flex-direction: column; gap: 4px; text-align: left; padding: var(--space-4); border-radius: var(--radius-input); border: 1px solid var(--ink-200); background: var(--surface-0); font: inherit; color: var(--ink-900); cursor: pointer; }
+.setup-preset[aria-checked='true'] { border-color: var(--brand-primary-hover, var(--ink-900)); background: var(--brand-primary-soft); }
+.setup-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.setup-list li { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; }
+.setup-list li .text-btn { margin-left: auto; }
+.setup-mark { width: 20px; text-align: center; color: var(--ink-600); }
+.setup-list .done .setup-mark { color: var(--ink-900); }
+
+.setup-later { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.setup-later li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-input); background: var(--surface-1); }
+.setup-later li > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ns-how { margin: 0; }
+.ns-how summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; font-size: 13px; }
+.ns-how p { margin: 0 0 var(--space-2); }
+
+/* Notes: the composer and the chip that says what a note is about. */
+.note-wrap { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; min-width: 0; }
+.note-btn { display: inline-flex; align-items: center; gap: 6px; }
+.note-composer { width: min(560px, 100%); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-input); background: var(--surface-1); border: 1px solid var(--ink-200); }
+.note-composer textarea { width: 100%; box-sizing: border-box; min-height: 72px; resize: vertical; padding: var(--space-2) var(--space-3); border-radius: var(--radius-input); border: 1px solid var(--ink-200); background: var(--surface-0); color: var(--ink-900); font: inherit; }
+.note-composer textarea:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 1px; }
+.note-chip { align-self: flex-start; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--surface-0); border: 1px solid var(--ink-200); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-900); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Notes view */
+.note-quick { display: flex; gap: var(--space-3); align-items: flex-start; flex-wrap: wrap; }
+.note-quick textarea { flex: 1 1 320px; min-width: 0; box-sizing: border-box; padding: var(--space-2) var(--space-3); border-radius: var(--radius-input); border: 1px solid var(--ink-200); background: var(--surface-0); color: var(--ink-900); font: inherit; resize: vertical; }
+.note-quick textarea:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 1px; }
+.note-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.note-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-chip.link { cursor: pointer; font-family: inherit; }
+.note-chip.link:hover { background: var(--surface-1); }
+.note-chip.link:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+.note-snap summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; font-size: 13px; color: var(--ink-700); }
+.note-snap ul { list-style: none; margin: 0 0 var(--space-2); padding: 0 0 0 var(--space-3); display: grid; gap: 2px; }
+.note-actions { align-items: center; gap: var(--space-2); }
+.chip-toggle { min-height: 36px; padding: 0 14px; border-radius: var(--radius-pill); border: 1px solid var(--ink-200); background: var(--surface-0); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-900); cursor: pointer; }
+.chip-toggle[aria-pressed='true'] { background: var(--brand-primary-soft); border-color: var(--glass-green-border); }
+.chip-toggle:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+@media (pointer: coarse) { .chip-toggle { min-height: 44px; } }
+
+/* Day rings: the phone's per-day in-range treatment (ring plus percent). */
+.day-rings { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); justify-items: center; gap: var(--space-3) var(--space-2); }
+.day-ring-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; }
+.day-ring-cell.today .day-ring-label { color: var(--ink-900); font-weight: 600; }
+.day-ring-label { white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--ink-700); }
+
+/* Key numbers: the phone's summary tiles, as one row or a stack by width. */
+.key-numbers { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: var(--space-3); }
+.key-numbers.compact { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+.key-numbers.compact .key-number { flex-direction: row; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.key-numbers.compact .big-num { font-size: 28px; line-height: 32px; }
+.key-number {  min-width: 0; padding: var(--space-3); border-radius: var(--radius-input); background: var(--surface-1); display: flex; flex-direction: column; gap: 2px; }
+.key-number dd { margin: 0; }
+
+/* Settings → Your Loop settings, Notifications */
+.loop-schedules { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-4); }
+.notif-cats, .notif-queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.notif-queue li { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; border-top: 1px solid var(--ink-200); }
+
+/* Glucose now: the phone's status line, word first, colour only as a dot */
+.cgm-value { flex-wrap: wrap; }
+.cgm-status { flex-basis: 100%; display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-small); font-weight: 600; color: var(--ink-900); }
+.cgm-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--range-in); }
+.cgm-status.low::before { background: var(--range-low); }
+.cgm-status.high::before { background: var(--range-high); }
+
+/* Tile → detail (ui/expand.ts). The pressed tile and the detail's first panel share one
+   name; the shell stays still; the page recedes; the detail arrives after the panel lands.
+   Transform and opacity only. Exits run faster than entrances. */
+html.ls-vt .sidebar { view-transition-name: ls-nav; }
+html.ls-vt .topbar { view-transition-name: ls-top; }
+html.ls-vt .detail-page .detail-grid > :first-child { view-transition-name: ls-hero; }
+::view-transition-group(ls-nav), ::view-transition-group(ls-top) { animation: none; }
+/* Opening: a touch slower (560ms) so the eye can follow the tile into the panel. The two pictures
+   overlap their fades (plus-lighter) over a solid card, so the growing box never goes see-through
+   and never reads as "expanded, then vanished". */
+::view-transition-group(ls-hero) { animation-duration: 560ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0, 1); }
+::view-transition-image-pair(ls-hero) { overflow: hidden; border-radius: 22px; background: var(--surface-0); isolation: isolate; }
+::view-transition-old(ls-hero), ::view-transition-new(ls-hero) { height: 100%; object-fit: cover; object-position: top left; mix-blend-mode: plus-lighter; }
+::view-transition-old(ls-hero) { animation: ls-fade-out 300ms ease-in 140ms both; }
+::view-transition-new(ls-hero) { animation: ls-fade-in 320ms ease-out 80ms both; }
+::view-transition-old(root) { animation: ls-recede 320ms cubic-bezier(0.4, 0, 1, 1) both; }
+::view-transition-new(root) { animation: ls-arrive 440ms cubic-bezier(0.2, 0.8, 0, 1) 200ms both; }
+/* Back: the same path, quicker (exits run faster than entrances). */
+html.ls-vt-back::view-transition-group(ls-hero) { animation-duration: 440ms; }
+html.ls-vt-back::view-transition-old(ls-hero) { animation: ls-fade-out 240ms ease-in 100ms both; }
+html.ls-vt-back::view-transition-new(ls-hero) { animation: ls-fade-in 260ms ease-out 40ms both; }
+html.ls-vt-back::view-transition-old(root) { animation: ls-recede 240ms cubic-bezier(0.4, 0, 1, 1) both; }
+html.ls-vt-back::view-transition-new(root) { animation: ls-arrive 320ms cubic-bezier(0.2, 0.8, 0, 1) 100ms both; }
+/* Fuzzy load, opening only (board consensus, Nov 24: "ghost of the real shape"). The tile's own
+   picture stretches with the panel instead of sitting cropped in its corner, blurs at mid-flight
+   (10px at 40%) so the stretch never reads as data, and hands over as the detail focuses in
+   (6px → 0). Nothing new is drawn: the ghost is the tile you pressed. */
+/* The ghost hands over early (gone by 260ms) so what grows through most of the flight is the bones. */
+/* Opening, from the first frame: the detail's bones sit fully visible behind the tile, and the
+   tile's own picture fades off the top of them (gone by 240ms). No plus-lighter here: adding a
+   white tile to light-grey bones summed to plain white, which was the "blank box" growing. */
+html:not(.ls-vt-back)::view-transition-old(ls-hero) { z-index: 1; width: 100%; height: 100%; object-fit: fill; mix-blend-mode: normal; animation: ls-ghost 240ms cubic-bezier(0.2, 0.8, 0, 1) both; }
+html:not(.ls-vt-back)::view-transition-new(ls-hero) { mix-blend-mode: normal; animation: none; opacity: 1; }
+@keyframes ls-ghost { 0% { opacity: 1; filter: blur(0); } 100% { opacity: 0; filter: blur(6px); } }
+/* Bones, then the data (ui/expand.ts, Nov 24). While the panel grows, the detail is already drawn
+   in its real layout as low-fidelity shapes: every line of text a bar exactly its own width (a thick
+   underline over transparent text, so nothing reflows), charts as soft blocks, rings and colour
+   greyed out. When the panel lands, the bars fade into the words and the charts focus in: it snaps
+   into place without a single element moving. The headline number is never boned; it travels
+   whole (ls-num). Only the real layout is drawn, never placeholder values. */
+html.ls-bones .detail-page .detail-grid :is(h1, h2, h3, h4, p, li, dt, dd, th, td, label, small, figcaption, a, button, span, b, strong, em):not(.big-num, .cgm-value, .gl-big):not(:has(.big-num, .cgm-value, .gl-big)):not(:is(.big-num, .cgm-value, .gl-big) *),
+html.ls-reveal .detail-page .detail-grid :is(h1, h2, h3, h4, p, li, dt, dd, th, td, label, small, figcaption, a, button, span, b, strong, em):not(.big-num, .cgm-value, .gl-big):not(:has(.big-num, .cgm-value, .gl-big)):not(:is(.big-num, .cgm-value, .gl-big) *) {
+  text-decoration-line: underline; text-decoration-thickness: 0.78em; text-underline-offset: -0.62em; text-decoration-skip-ink: none;
+}
+html.ls-bones .detail-page .detail-grid :is(h1, h2, h3, h4, p, li, dt, dd, th, td, label, small, figcaption, a, button, span, b, strong, em):not(.big-num, .cgm-value, .gl-big):not(:has(.big-num, .cgm-value, .gl-big)):not(:is(.big-num, .cgm-value, .gl-big) *) {
+  /* ink-300, not 200: the bars have to read while the panel is still tile-sized. */
+  color: transparent; text-decoration-color: var(--ink-300);
+}
+html.ls-reveal .detail-page .detail-grid :is(h1, h2, h3, h4, p, li, dt, dd, th, td, label, small, figcaption, a, button, span, b, strong, em):not(.big-num, .cgm-value, .gl-big):not(:has(.big-num, .cgm-value, .gl-big)):not(:is(.big-num, .cgm-value, .gl-big) *) {
+  text-decoration-color: transparent;
+  transition: color 260ms cubic-bezier(0.2, 0.8, 0, 1), text-decoration-color 200ms ease-out;
+}
+/* Charts: a soft block where the chart sits, the chart itself hidden until the data lands. */
+html.ls-bones .detail-page .detail-grid :is(.fit, figure):has(> svg),
+html.ls-bones .detail-page .detail-grid :has(> svg[role='img']) { background-color: var(--ink-200); border-radius: 10px; }
+html.ls-bones .detail-page .detail-grid :is(.fit, figure) > svg,
+html.ls-bones .detail-page .detail-grid svg[role='img'] { opacity: 0; }
+/* Small marks (day rings, icons) and coloured fills keep their shape, without colour. */
+html.ls-bones .detail-page .detail-grid svg:not([role='img']),
+html.ls-bones .detail-page .detail-grid [style*='background'] { filter: grayscale(1); opacity: 0.35; }
+html.ls-bones .detail-page .detail-grid :is(table, .chip, .pill, .delta-chip, .flag) { border-color: var(--ink-200); }
+/* Values drawn inside a mark (a ring's percent) wait for the data like any other text. */
+html.ls-bones .detail-page .detail-grid svg text { opacity: 0; }
+html.ls-reveal .detail-page .detail-grid svg text { transition: opacity 260ms ease-out; }
+/* The snap: the bones' block fades away under the chart as it focuses; marks take their colour back. */
+html.ls-reveal .detail-page .detail-grid :is(.fit, figure):has(> svg),
+html.ls-reveal .detail-page .detail-grid :has(> svg[role='img']) { transition: background-color 240ms ease-out; }
+html.ls-reveal .detail-page .detail-grid :is(.fit, figure) > svg,
+html.ls-reveal .detail-page .detail-grid svg[role='img'] { animation: ls-build-focus 380ms cubic-bezier(0.2, 0.8, 0, 1) both; }
+html.ls-reveal .detail-page .detail-grid svg:not([role='img']),
+html.ls-reveal .detail-page .detail-grid [style*='background'] { transition: filter 260ms ease-out, opacity 260ms ease-out; }
+@keyframes ls-build-focus { from { opacity: 0; filter: blur(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  html.ls-bones .detail-page *, html.ls-reveal .detail-page * { animation: none !important; transition: none !important; }
+}
+/* The headline number travels on its own and stays sharp: same digits, tile to panel. */
+::view-transition-group(ls-num) { animation-duration: 560ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0, 1); }
+::view-transition-old(ls-num), ::view-transition-new(ls-num) { height: 100%; width: 100%; object-fit: fill; }
+::view-transition-old(ls-num) { animation: ls-fade-out 260ms ease-in 120ms both; }
+::view-transition-new(ls-num) { animation: ls-fade-in 260ms ease-out 120ms both; }
+html.ls-vt-back::view-transition-group(ls-num) { animation-duration: 440ms; }
+@keyframes ls-fade-out { to { opacity: 0; } }
+@keyframes ls-fade-in { from { opacity: 0; } }
+@keyframes ls-recede { to { opacity: 0; transform: scale(0.985); } }
+@keyframes ls-arrive { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) { animation-duration: 0s !important; }
+  ::view-transition-old(*), ::view-transition-new(*) { animation: ls-fade-out 120ms ease-out both !important; }
+  ::view-transition-new(*) { animation-name: ls-fade-in !important; }
+}
+
+/* A detail's sidebar never pushes the page sideways: its content wraps or scrolls inside it. */
+.detail-grid > * { min-width: 0; }
+.detail-grid > aside { overflow-x: auto; }
+.detail-page { overflow-x: clip; }
+.low-events .table th, .low-events .table td { padding-inline: 6px; }
+
+/* One takeaway sentence at the top of a detail view's main panel: the answer before the evidence (C2). */
+.takeaway { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--ink-900); }
+/* Method text one press away, so the reading isn't a wall (details pass, Nov 24). */
+details.method summary { cursor: pointer; min-height: 28px; display: flex; align-items: center; }
+details.method summary:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; border-radius: 4px; }
+details.method > p { margin: var(--space-2) 0 0; }
+/* A change against the period before: arrow, amount and what it's against, in words. */
+.delta-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--surface-1); border: 1px solid var(--ink-200); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-900); white-space: nowrap; }
+.delta-chip .caption { font-weight: 500; }

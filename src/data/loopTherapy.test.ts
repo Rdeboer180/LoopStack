@@ -36,45 +36,45 @@ describe('valueAt', () => {
   });
 });
 
-describe('sample carb ratio schedule', () => {
-  it('resolves the three bands by clock time', () => {
-    expect(carbRatioAt(realLoopTherapy, at(2))).toBe(12); // overnight
-    expect(carbRatioAt(realLoopTherapy, at(13, 30))).toBe(13); // midday
-    expect(carbRatioAt(realLoopTherapy, at(19))).toBe(12); // evening
+describe("Ryan's real carb ratio schedule", () => {
+  it('resolves the three real bands by clock time', () => {
+    expect(carbRatioAt(realLoopTherapy, at(2))).toBe(27.8); // overnight
+    expect(carbRatioAt(realLoopTherapy, at(13, 30))).toBe(28.5); // midday
+    expect(carbRatioAt(realLoopTherapy, at(19))).toBe(25.5); // late
   });
 
-  it('crosses the 11:00 AM boundary correctly', () => {
-    expect(carbRatioAt(realLoopTherapy, at(10, 59))).toBe(12);
-    expect(carbRatioAt(realLoopTherapy, at(11, 0))).toBe(13);
+  it('crosses the 1:00 PM boundary correctly', () => {
+    expect(carbRatioAt(realLoopTherapy, at(12, 59))).toBe(27.8);
+    expect(carbRatioAt(realLoopTherapy, at(13, 0))).toBe(28.5);
   });
 });
 
-describe('sample ISF schedule', () => {
-  it('resolves each band by clock time', () => {
-    expect(isfAt(realLoopTherapy, at(0))).toBe(50);
+describe("Ryan's real ISF schedule", () => {
+  it('resolves the peak-sensitivity afternoon band', () => {
+    expect(isfAt(realLoopTherapy, at(0))).toBe(40);
     expect(isfAt(realLoopTherapy, at(7))).toBe(45);
-    expect(isfAt(realLoopTherapy, at(16))).toBe(55); // afternoon band
-    expect(isfAt(realLoopTherapy, at(23))).toBe(50);
+    expect(isfAt(realLoopTherapy, at(16))).toBe(50); // 3:30 PM band
+    expect(isfAt(realLoopTherapy, at(23))).toBe(40);
   });
 });
 
 describe('rangeAt (correction range)', () => {
-  it('resolves the band that applies at a time', () => {
-    expect(rangeAt(realLoopTherapy.correctionRange, minutesOfDay(at(7, 30)))).toEqual({
-      low: 100,
-      high: 115,
+  it('resolves the widest band in the early morning', () => {
+    expect(rangeAt(realLoopTherapy.correctionRange, minutesOfDay(at(6, 30)))).toEqual({
+      low: 110,
+      high: 130,
     });
     expect(rangeAt(realLoopTherapy.correctionRange, minutesOfDay(at(0)))).toEqual({
-      low: 100,
-      high: 110,
+      low: 105,
+      high: 115,
     });
   });
 });
 
 describe('dailyBasalTotal', () => {
-  it('integrates the schedule over the day', () => {
-    // 0.85×3 + 0.95×4 + 0.8×5 + 0.7×5 + 0.8×4 + 0.9×3
-    expect(dailyBasalTotal(realLoopTherapy)).toBeCloseTo(19.75, 2);
+  it('integrates the schedule to the total Loop reports', () => {
+    // Loop's own display shows 14.82 U/day for this schedule.
+    expect(dailyBasalTotal(realLoopTherapy)).toBeCloseTo(14.82, 2);
   });
 });
 

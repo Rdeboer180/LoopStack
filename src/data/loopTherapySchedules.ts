@@ -50,7 +50,7 @@ export type ScheduleField = keyof typeof scheduleLimits;
 
 export const RANGE_LIMITS = { min: 60, max: 300, step: 1, unit: 'mg/dL' };
 
-/** Defaults are the sample settings in loopTherapy.ts, until your own are entered. */
+/** Defaults are the transcribed real settings — the mirror starts truthful. */
 export function defaultSchedules(): EditableSchedules {
   const t = realLoopTherapy;
   return {

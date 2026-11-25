@@ -5,23 +5,31 @@ import { useState, type ReactNode } from 'react';
 import { bands, TirBar } from '../charts/Agp';
 import { DayTrackerChart } from '../charts/DayTracker';
 import { GlucoseChart } from '../charts/GlucoseChart';
+import { CgmChart } from '../charts/CgmChart';
 import { gridGeom, HourGrid } from '../charts/HourGrid';
 import { MorningsChart } from '../charts/MorningsChart';
 import {
   blocks, count, diff, hourName, morningGlucose, partOfDay, peak, pct, rangeLabel, select, stretchOf, USABLE_N, type Mode,
 } from '../data/derive';
 import {
-  CGM_NOW, CHANGES, DATA, DAY, DAY_BY_WEEKDAY, HEADS_UP, LUNCH, NOT_COUNTED, NOT_COUNTED_CAUSE, PATIENT, PERIOD, READ, TEXT,
+  CGM_NOW, CHANGES, DAILY, DATA, DAY, DAY_BY_WEEKDAY, HEADS_UP, LUNCH, NOT_COUNTED, NOT_COUNTED_CAUSE, PATIENT, PERIOD, READ, TEXT,
 } from '../data/current';
 import { daysLeft, useLoopBuild } from '../data/loopBuild';
 import { FavoriteFoodsDetail, FavoriteFoodsGlance } from './FavoriteFoods';
 import { DailyGlucoseDetail, DailyGlucoseGlance } from './DailyGlucose';
 import { CareThreadDetail, CareThreadGlance } from './CareTeam';
 import { WhatLoopDidDetail as WhatLoopDidPatternsDetail, WhatLoopDidGlance as WhatLoopDidPatternsGlance } from './WhatLoopDid';
+import { HourEvidence, ReviewQueue } from './HourEvidence';
 import type { Go, Route } from '../nav';
 import { TILES, type TileKind } from '../layout/model';
 import { useStore, who, type Msg } from '../state';
-import { Chip, Fit, IBell, Ring, Segmented, useAnnounce } from '../ui/kit';
+import { HourByHourDetail, HourByHourGlance } from './HourByHour';
+import { DayRings, ringKey, weakestDay } from '../ui/DayRings';
+import { BANDS, isStandard, rangeText } from '../data/ranges';
+import { nowStatus } from '../data/glucoseNow';
+import { DeltaChip } from '../ui/DeltaChip';
+import { DayPicker, dayPickIndex, dayPickName, dayPickOf, downloadCsv, FocusBar, inPick, type DayPick, type FocusView } from '../ui/Focus';
+import { Chip, Fit, IBell, LoopPill, Num, Ring, Segmented, useAnnounce } from '../ui/kit';
 
 export interface FaceProps {
   route: Route;
@@ -33,30 +41,6 @@ export interface FaceProps {
 
 // ------------------------------------------------------------ glucose now
 
-const SYN_CGM_LABEL = 'Glucose since 6am: rose to 150 mg/dL around 7:30am and came back down to 112 mg/dL now, falling slowly. Loop’s prediction, dashed, stays near 107 to 109 mg/dL over the next 90 minutes, inside the 70 to 180 mg/dL range.';
-
-/** Hours shown on the glucose-now chart: the synthetic 6–11am, or the last readings plus the prediction. */
-function cgmGeom() {
-  if (DATA.source === 'synthetic') return { x0: 6, x1: 11, ymax: 240 };
-  const all = [...CGM_NOW.points, ...CGM_NOW.prediction];
-  if (!all.length) return { x0: 0, x1: 3, ymax: 240 };
-  const x0 = Math.floor(Math.min(...all.map((p) => p[0])));
-  const x1 = Math.ceil(Math.max(...all.map((p) => p[0])));
-  return { x0, x1: Math.max(x1, x0 + 2), ymax: Math.max(240, Math.ceil(Math.max(...all.map((p) => p[1])) / 20) * 20 + 20) };
-}
-
-function cgmLabel(): string {
-  if (DATA.source === 'synthetic') return SYN_CGM_LABEL;
-  const pts = CGM_NOW.points;
-  if (!pts.length || CGM_NOW.mgdl == null) return 'No recent CGM readings in Nightscout.';
-  const hi = pts.reduce((a, b) => (b[1] > a[1] ? b : a));
-  const lo = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
-  const pr = CGM_NOW.prediction;
-  const prText = pr.length ? ` Loop’s prediction, dashed, runs from ${Math.round(Math.min(...pr.map((p) => p[1])))} to ${Math.round(Math.max(...pr.map((p) => p[1])))} mg/dL over the next ${Math.round((pr[pr.length - 1][0] - pr[0][0]) * 60)} minutes.` : '';
-  return `Glucose over the last ${Math.round((pts[pts.length - 1][0] - pts[0][0]) * 60 / 30) / 2} hours: between ${lo[1]} and ${hi[1]} mg/dL, now ${CGM_NOW.mgdl} mg/dL, ${CGM_NOW.trendLabel}.${prText}`;
-}
-
-
 function CgmNumber({ big = false }: { big?: boolean }) {
   const c = CGM_NOW;
   return (
@@ -65,8 +49,16 @@ function CgmNumber({ big = false }: { big?: boolean }) {
       <span className="unit">mg/dL</span>
       <span className="arrow" role="img" aria-label={c.trendLabel}>{c.trend}</span>
       <span className="caption age">{c.ageMin} min ago</span>
+      <NowStatusLine />
     </div>
   );
+}
+
+/** The phone's status line: in range, low or urgent low from your bands, and the trend in words. */
+function NowStatusLine() {
+  const s = nowStatus(CGM_NOW.mgdl, CGM_NOW.points);
+  if (!s) return null;
+  return <span className={`cgm-status ${s.tone}`}>{s.word} · {s.trend.toLowerCase()}</span>;
 }
 
 function LoopLine() {
@@ -80,34 +72,82 @@ function LoopLine() {
   );
 }
 
-const cgmSeries = () => [
-  { pts: CGM_NOW.points, stroke: 'var(--ink-900)', width: 2.2 },
-  { pts: CGM_NOW.prediction, stroke: 'var(--ink-900)', width: 1.6, dash: '3 3', opacity: 0.6 },
-];
-
 function GlucoseNowGlance() {
+  const sample = DATA.source === 'synthetic';
+  const asOf = DATA.fetchedAt ? new Date(DATA.fetchedAt) : null;
+  const recorded = asOf && CGM_NOW.mgdl != null ? new Date(asOf.getTime() - CGM_NOW.ageMin * 60000) : null;
+  const loopTime = asOf && DATA.CGM_NOW.statusAt ? new Date(DATA.CGM_NOW.statusAt) : null;
+  const clock = (d: Date) => d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
-    <div className="face">
-      <CgmNumber />
-      <LoopLine />
-      <Fit className="grow" minH={60}>
-        {({ w, h }) => <GlucoseChart geom={{ W: w, H: h, ...cgmGeom() }} series={cgmSeries()} label={cgmLabel()} />}
+    <div className="face current-glance">
+      <div className="current-top">
+        <strong className="current-reading">
+          <Num value={CGM_NOW.mgdl} />
+          <span className="current-trend" role="img" aria-label={CGM_NOW.trendLabel}>{CGM_NOW.trend}</span>
+          <small>mg/dL</small>
+        </strong>
+        <LoopPill minutes={sample ? PATIENT.loopedMinAgo : loopTime && asOf ? Math.max(0, Math.round((asOf.getTime() - loopTime.getTime()) / 60000)) : null} />
+      </div>
+      <NowStatusLine />
+      {!sample && recorded && <span className="caption gl-read-at">Reading from {clock(recorded)}</span>}
+      {/* One stack, hairlines between: each fact is a small grey label over a number. */}
+      <dl className="stat-stack">
+        <div><dt>Active insulin</dt><dd>{CGM_NOW.activeInsulinU == null ? '—' : <><Num value={CGM_NOW.activeInsulinU} digits={2} /><small>U</small></>}</dd></div>
+        <div><dt>Active carbs</dt><dd>{CGM_NOW.activeCarbsG == null ? '—' : <><Num value={CGM_NOW.activeCarbsG} /><small>g</small></>}</dd></div>
+        <div><dt>In range · {PERIOD.days}d</dt><dd>{READ.meanMgdl > 0 ? <><Num value={READ.mine.inRangePct} digits={READ.mine.inRangePct % 1 ? 1 : 0} /><small>%</small></> : '—'}</dd></div>
+      </dl>
+      <Fit className="grow" minH={36}>
+        {({ w, h }) => { const v = cgmWindow(3); return <CgmChart compact W={w} H={h} readings={v.readings} prediction={CGM_NOW.prediction} x0={v.x0} x1={v.x1} label={cgmWindowLabel(3)} />; }}
       </Fit>
-      <span className="caption">Dashed: Loop’s prediction · 70–180 shaded</span>
+      <span className="caption gl-foot">Dots: your CGM · dashed: Loop’s prediction</span>
     </div>
   );
 }
 
+/** Hours the detail can show, like a CGM receiver. */
+const CGM_SPANS = ['3', '6', '12', '24'] as const;
+type CgmSpan = (typeof CGM_SPANS)[number];
+
+/** The last `span` hours of readings, ending now, plus room for Loop's prediction. */
+function cgmWindow(span: number) {
+  const day = CGM_NOW.day?.length ? CGM_NOW.day : CGM_NOW.points;
+  const now = day.length ? day[day.length - 1][0] : 0;
+  const predEnd = CGM_NOW.prediction.length ? CGM_NOW.prediction[CGM_NOW.prediction.length - 1][0] : now;
+  // The prediction gets a fixed share of the width, so a 24-hour view isn't squashed by it.
+  const ahead = Math.min(predEnd - now, span <= 3 ? 1.5 : span <= 6 ? 1.5 : span / 8);
+  const x0 = now - span;
+  return { readings: day.filter(([h]) => h >= x0), x0, x1: now + Math.max(ahead, span / 12) };
+}
+
+function cgmWindowLabel(span: number): string {
+  const { readings } = cgmWindow(span);
+  if (!readings.length || CGM_NOW.mgdl == null) return 'No recent CGM readings.';
+  const hi = readings.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const lo = readings.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const below = readings.filter(([, v]) => v < BANDS.low).length;
+  const pr = CGM_NOW.prediction;
+  const prText = pr.length ? ` Loop’s prediction, dashed, runs from ${Math.round(Math.min(...pr.map((p) => p[1])))} to ${Math.round(Math.max(...pr.map((p) => p[1])))} mg/dL.` : '';
+  return `Glucose, one dot per reading, over the last ${span} hours: between ${lo[1]} and ${hi[1]} mg/dL${below ? `, ${below} ${below === 1 ? 'reading' : 'readings'} under ${BANDS.low}` : ''}; now ${CGM_NOW.mgdl} mg/dL, ${CGM_NOW.trendLabel}.${prText}`;
+}
+
 function GlucoseNowDetail() {
+  const [span, setSpan] = useState<CgmSpan>('3');
+  const v = cgmWindow(Number(span));
+  const lows = v.readings.filter(([, g]) => g < BANDS.low).length;
+  const highs = v.readings.filter(([, g]) => g > BANDS.high).length;
   return (
     <div className="detail-grid">
       <section className="panel stack-12" aria-label="Glucose now">
         <CgmNumber big />
         <LoopLine />
+        <div className="row between wrap">
+          <p className="small">{v.readings.length} readings · {lows ? `${lows} under ${BANDS.low}` : `none under ${BANDS.low}`} · {highs ? `${highs} over ${BANDS.high}` : `none over ${BANDS.high}`}</p>
+          <Segmented size="sm" label="Hours shown" value={span} onChange={setSpan} items={CGM_SPANS.map((s) => ({ value: s, label: `${s}h` }))} />
+        </div>
         <Fit className="chart-lg">
-          {({ w, h }) => <GlucoseChart geom={{ W: w, H: h, ...cgmGeom() }} series={cgmSeries()} label={cgmLabel()} />}
+          {({ w, h }) => <CgmChart W={w} H={h} readings={v.readings} prediction={CGM_NOW.prediction} x0={v.x0} x1={v.x1} label={cgmWindowLabel(Number(span))} />}
         </Fit>
-        <span className="caption">{rangeLabel(((cgmGeom().x0 % 24) + 24) % 24, ((cgmGeom().x1 % 24) + 24) % 24 || 24)} · solid is your CGM, dashed is Loop’s prediction · 70–180 mg/dL shaded</span>
+        <span className="caption">Each dot is a CGM reading: red under {BANDS.low}, amber over {BANDS.high}. Dashed past Now is Loop’s prediction. Hover a dot for its time.</span>
       </section>
       <aside className="panel stack-12" aria-label="About this reading">
         <h3 className="h3">Where this comes from</h3>
@@ -134,7 +174,7 @@ function HeadsUpCard() {
         <div className="stack">
           <span className="caption">Heads-up · today</span>
           <span className="lead-sm">No heads-up today</span>
-          <span className="small">No stretch of this weekday ran low or high in 10% of readings over the last 12 weeks.</span>
+          <span className="small">A weekday pattern needs at least three sampled weeks.</span>
         </div>
       </div>
     );
@@ -155,8 +195,8 @@ function HeadsUpsGlance({ go, h }: FaceProps) {
   return (
     <div className="face">
       <HeadsUpCard />
-      {h > 1 && HEADS_UP && <p className="small">No other stretch today passed the 10% bar.</p>}
-      <button type="button" className="text-btn" onClick={() => go({ tile: 'day-tracker' })}>See the average {DAY.name}</button>
+      {h > 1 && <p className="small">{DATA.source === 'synthetic' ? 'Hourly patterns from up to 12 weeks.' : 'Nightscout history · Hourly patterns from up to 12 weeks.'}</p>}
+      <button type="button" className="text-btn" onClick={() => go({ tile: 'hour-evidence', evidence: { weekday: HEADS_UP?.weekday ?? DAY.weekday, hour: HEADS_UP?.stretch[0] ?? 12 } })}>{HEADS_UP ? 'Inspect those hours' : 'Explore weekday hours'}</button>
     </div>
   );
 }
@@ -165,17 +205,21 @@ function HeadsUpsDetail({ go }: FaceProps) {
   return (
     <div className="detail-grid">
       <section className="panel stack-12" aria-label="Today’s heads-ups">
+        {TEXT.headsUpBody && <p className="takeaway">{TEXT.headsUpBody}</p>}
         <HeadsUpCard />
-        <Fit className="chart-lg">{({ w, h }) => <DayTrackerChart W={w} H={h} />}</Fit>
-        <div className="row between">
-          <span className="caption">The average {DAY.name}, last {DAY.weeks} weeks{DAY.stretch ? ` · ${rangeLabel(DAY.stretch[0], DAY.stretch[1])} shaded` : ''}</span>
-          <button type="button" className="text-btn" onClick={() => go({ tile: 'day-tracker' })}>Open the day tracker</button>
+        {/* The day's chart lives in the day tracker; this view says what and when, then goes there. */}
+        <div className="row wrap">
+          <button type="button" className="quiet-btn" onClick={() => go({ tile: 'day-tracker' })}>See the average {DAY.name} in the day tracker</button>
+          <button type="button" className="text-btn" onClick={() => go({ tile: 'hour-evidence' })}>Check the hours behind it</button>
         </div>
       </section>
       <aside className="panel stack-12" aria-label="How heads-ups work">
-        <h3 className="h3">How a heads-up is picked</h3>
-        <p className="small">A weekday stretch gets a heads-up two hours before it starts when at least 10% of its readings ran low or high over the last 12 weeks, with at least 3 weeks behind each hour. At most 3 a day.</p>
-        {TEXT.headsUpBody && <p className="small">{TEXT.headsUpBody}</p>}
+        <h3 className="h3">About heads-ups</h3>
+        <p className="small">A heads-up comes two hours before a weekday stretch that has often run low or high. At most 3 a day.</p>
+        <details className="method">
+          <summary className="small strong">How one is picked</summary>
+          <p className="small">At least 10% of the stretch’s readings ran low or high over the last 12 weeks, with at least 3 weeks behind each hour.</p>
+        </details>
         <p className="caption">An observation, not a cause. Always on your dashboard.</p>
       </aside>
     </div>
@@ -184,13 +228,7 @@ function HeadsUpsDetail({ go }: FaceProps) {
 
 // ------------------------------------------------------------ day tracker (PROD-2)
 
-const WEEKDAYS = [
-  { value: 'sun', label: 'S', title: 'Sunday' }, { value: 'mon', label: 'M', title: 'Monday' }, { value: 'tue', label: 'T', title: 'Tuesday' },
-  { value: 'wed', label: 'W', title: 'Wednesday' }, { value: 'thu', label: 'T', title: 'Thursday' }, { value: 'fri', label: 'F', title: 'Friday' },
-  { value: 'sat', label: 'S', title: 'Saturday' },
-  { value: 'all', label: 'All', title: 'Every day' },
-] as const;
-type Weekday = (typeof WEEKDAYS)[number]['value'];
+// The day picker is shared with every focused view (ui/Focus.tsx): Every day, Weekdays, Weekends, Sun to Sat.
 
 function DayLegend() {
   return (
@@ -205,31 +243,33 @@ function DayLegend() {
 
 const nowHours = () => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; };
 
-function DayTrackerBody({ big, day: shared, onDay }: { big: boolean; day?: Weekday; onDay?: (d: Weekday) => void }) {
-  const [own, setOwn] = useState<Weekday>(WEEKDAYS[DAY.weekday].value);
+function DayTrackerBody({ big, day: shared, onDay }: { big: boolean; day?: DayPick; onDay?: (d: DayPick) => void }) {
+  const [own, setOwn] = useState<DayPick>(dayPickOf(DAY.weekday));
   const day = shared ?? own;
   const setDay = onDay ?? setOwn;
-  const idx = WEEKDAYS.findIndex((d) => d.value === day);
-  const every = day === 'all';
-  const name = WEEKDAYS[idx].title;
+  const idx = dayPickIndex(day);
+  const every = idx >= 7;
+  const name = dayPickName(day);
   const tracked = DAY_BY_WEEKDAY[idx] ?? null;
+  const span = tracked ? (tracked.days ? `${tracked.days} days` : `${tracked.weeks} ${tracked.weeks === 1 ? 'week' : 'weeks'}`) : '';
   return (
     <>
       <div className="row between wrap">
-        <Segmented size="sm" label="Weekday" items={WEEKDAYS.map((d) => ({ ...d, label: d.label }))} value={day} onChange={setDay} />
-        <span className="caption">{every ? 'The average day, every day' : `The average ${name}`}, last {(tracked ?? DAY).weeks} weeks · median by hour</span>
+        {/* In the tile, one row: All and the seven weekdays. The focused view adds Weekdays and Weekends. */}
+        <DayPicker compact={!big} value={day} onChange={setDay} />
+        <span className="caption">{idx === 7 ? 'The average day' : idx >= 8 ? `The average of ${name}` : `The average ${name.slice(0, -1)}`}{span ? `, ${span} in this period` : ''} · median by hour</span>
       </div>
       {tracked ? (
         <Fit className={big ? 'chart-lg' : 'grow'} minH={120}>{({ w, h }) => <DayTrackerChart day={tracked} W={w} H={h} compact={!big} now={every ? nowHours() : tracked.weekday === new Date().getDay() || DATA.source === 'synthetic' ? undefined : null} />}</Fit>
-      ) : DATA.source === 'synthetic' ? (
+      ) : DATA.source === 'synthetic' && PERIOD.days <= 14 ? (
         <div className="empty-inline grow">
-          <p className="lead-sm">Only Fridays are in this sample.</p>
-          <p className="small">This synthetic fortnight carries one weekday in full. {name} shows nothing rather than a guess.</p>
+          <p className="lead-sm">Only Fridays are in this 14-day sample.</p>
+          <p className="small">Pick 30 days or more in the top bar to see every weekday. {name[0].toUpperCase() + name.slice(1)} shows nothing here rather than a guess.</p>
         </div>
       ) : (
         <div className="empty-inline grow">
-          <p className="lead-sm">{every ? 'Not enough days yet.' : `Not enough ${name}s yet.`}</p>
-          <p className="small">An hour needs at least 3 weeks of readings before it says anything. {name} shows nothing rather than a guess.</p>
+          <p className="lead-sm">{every ? 'Not enough days yet.' : `Not enough ${name} yet.`}</p>
+          <p className="small">An hour needs at least 2 of the same weekday (4 days for weekdays or weekends) before it says anything. A longer period in the top bar may have enough.</p>
         </div>
       )}
     </>
@@ -252,17 +292,41 @@ function dayFindingFor(d: (typeof DAY_BY_WEEKDAY)[number]): string {
 }
 
 function DayTrackerDetail() {
-  const [day, setDay] = useState<Weekday>(WEEKDAYS[DAY.weekday].value);
-  const selected = DAY_BY_WEEKDAY[WEEKDAYS.findIndex((w) => w.value === day)] ?? null;
+  const [day, setDay] = useState<DayPick>(dayPickOf(DAY.weekday));
+  const [view, setView] = useState<FocusView>('chart');
+  const selected = DAY_BY_WEEKDAY[dayPickIndex(day)] ?? null;
+  const rows = selected ? selected.glucose.map((g, h) => [hourName(h), g, selected.iob[h], selected.cob[h], selected.exercise[h] ?? 0] as const) : [];
+  const csv = () => downloadCsv(`loopstack-day-tracker-${day}-${PERIOD.days}d.csv`, ['Hour', 'Glucose median (mg/dL)', 'Active insulin (U)', 'Active carbs (g)', 'Exercise (min)'], rows);
   return (
     <div className="detail-grid">
       <section className="panel stack-12" aria-label="Day tracker">
-        <DayTrackerBody big day={day} onDay={setDay} />
-        <DayLegend />
+        <FocusBar covers={`${PERIOD.label} · ${PERIOD.days} days, the period in the top bar`} view={view} onView={setView} onCsv={csv} />
+        <p className="takeaway">{dayFindingFor(selected)}</p>
+        {view === 'chart' ? (
+          <>
+            <DayTrackerBody big day={day} onDay={setDay} />
+            <DayLegend />
+          </>
+        ) : (
+          <>
+            <DayPicker value={day} onChange={setDay} />
+            {selected ? (
+              <div className="focus-table-wrap">
+                <table className="table focus-table">
+                  <caption className="sr-only">The average {dayPickName(day)} by hour: glucose, active insulin, active carbs and exercise</caption>
+                  <thead><tr><th scope="col">Hour</th><th scope="col" className="num">Glucose, mg/dL</th><th scope="col" className="num">Active insulin, U</th><th scope="col" className="num">Active carbs, g</th><th scope="col" className="num">Exercise, min</th></tr></thead>
+                  <tbody>{rows.map(([hr, g, i, c, e]) => (
+                    <tr key={hr}><th scope="row">{hr}</th><td className={`num${g < BANDS.low ? ' low' : g > BANDS.high ? ' high' : ''}`}>{g}</td><td className="num">{i}</td><td className="num">{c}</td><td className="num">{e || '—'}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : <p className="small">Not enough {dayPickName(day)} in this period. A longer period in the top bar may have enough.</p>}
+          </>
+        )}
       </section>
-      <aside className="panel stack-12" aria-label="Seen alongside">
-        <h3 className="h3">Seen alongside</h3>
-        <p className="small">{dayFindingFor(selected)}</p>
+      <aside className="panel stack-12" aria-label="Reading the day">
+        <h3 className="h3">Reading the day</h3>
+        <p className="small">Each line is the median of that hour across the days picked: glucose, active insulin, active carbs and exercise, side by side so you can see what moved together.</p>
         {TEXT.dayTrackerLoop && selected?.weekday === DAY.weekday && <p className="small">{TEXT.dayTrackerLoop}</p>}
         <p className="caption">What happened, not why. Always on your dashboard.</p>
       </aside>
@@ -366,6 +430,8 @@ export function WhatLoopDidExplorer({ route, go, clinician = false }: { route: R
   return (
     <div className={`explorer${clinician ? " stacked" : ""}`}>
       <section className="panel stack-12" aria-label="Hour grid">
+        {/* In the care-team review every style names this as Loop's own adjustments, hour by hour. */}
+        {clinician && <h3 className="label">What Loop did · its adjustments against the schedule, hour by hour</h3>}
         <div className="row between wrap">
           <div className="row wrap">
             <span className="sample">{PERIOD.days} days · {USABLE_N} usable</span>
@@ -390,7 +456,7 @@ export function WhatLoopDidExplorer({ route, go, clinician = false }: { route: R
             const center = geo.x(sel) + geo.cw / 2;
             return (
               <div style={{ position: 'relative', paddingTop: 40 }}>
-                <div role="status" aria-live="polite" className="readout glass" style={{ left: Math.min(Math.max(center - 130, 0), w - 260) }}>
+                <div role="status" aria-live="polite" className="readout glass" style={{ transform: `translateX(${Math.max(0, Math.min(center - 130, w - 260))}px)` }}>
                   {readout(mode, sel)}
                 </div>
                 <HourGrid mode={mode} sel={sel} onSelect={pick} label={gridFinding(mode, clinician)} valueText={readout(mode, sel)} W={w} RH={RH} />
@@ -498,9 +564,9 @@ function BeforeAfterDetail() {
           <span className="sample">{LUNCH.usable.days} days before · {LUNCH.usable.before} usable</span>
           <span className="sample">{LUNCH.usable.days} days after · {LUNCH.usable.after} usable</span>
         </div>
+        <p className="takeaway">{lunchPeakText().replace(/\.$/, '')}: {pb[1]} → {pa[1]} mg/dL at {time(pb[0])}, {pct((pa[1] - pb[1]) / pb[1])}.</p>
         <BaChart className="chart-lg" />
         <BaLegend />
-        <p className="lead-sm">{lunchPeakText().replace(/\.$/, '')}: {pb[1]} → {pa[1]} mg/dL at {time(pb[0])}, {pct((pa[1] - pb[1]) / pb[1])}.</p>
       </section>
       <aside className="panel stack-12" aria-label="The change">
         <h3 className="h3">{change ? 'The change' : 'The two sides'}</h3>
@@ -527,7 +593,7 @@ function BeforeAfterDetail() {
 function TirLegend() {
   return (
     <ul className="tir-legend">
-      {bands().map((b) => (
+      {bands('mine').map((b) => (
         <li key={b.key} className={b.key === 'in' ? 'in' : ''}>
           <span className="sw" style={{ background: b.fill }} />
           <span>{b.label}</span>
@@ -542,37 +608,67 @@ function TimeInRangeGlance({ h }: FaceProps) {
   return (
     <div className="face">
       <div className="row baseline" style={{ gap: 8 }}>
-        <span className="big-num">{READ.inRangePct}%</span>
-        <span className="small">in range · 14 days</span>
+        <span className="big-num"><Num value={READ.mine.inRangePct} digits={READ.mine.inRangePct % 1 ? 1 : 0} /><small>%</small></span>
+        <span className="small">in range {rangeText()} · {PERIOD.days} days</span>
       </div>
       {h > 1 ? (
         <div className="row grow" style={{ alignItems: 'stretch', gap: 16 }}>
-          <Fit className="tir-fit">{({ w, h: hh }) => <TirBar W={w} H={hh} labels={false} />}</Fit>
+          <Fit className="tir-fit">{({ w, h: hh }) => <TirBar W={w} H={hh} labels={false} set="mine" />}</Fit>
           <TirLegend />
         </div>
       ) : (
-        <span className="small">Low {READ.lowPct}% · very low {READ.veryLowPct}%</span>
+        <span className="small">Low {READ.mine.lowPct}% · urgent low {READ.mine.urgentPct}%</span>
       )}
+      {h > 2 && <DayRings days={DAILY.days.slice(-5)} today={DAILY.today} size={32} />}
     </div>
   );
 }
 
 function TimeInRangeDetail() {
   const goals: Record<string, string> = { 'very-high': 'under 5%', high: 'under 25% with very high', in: 'over 70%', low: 'under 4% with very low', 'very-low': 'under 1%' };
+  const [view, setView] = useState<FocusView>('chart');
+  const [day, setDay] = useState<DayPick>('all');
+  const days = DAILY.days.filter((d) => inPick(d.label, day));
+  const pctOr = (v: number | null) => (v == null ? '—' : `${Math.round(v)}%`);
+  const csv = () => downloadCsv(`loopstack-time-in-range-${PERIOD.days}d.csv`, ['Day', 'Counted', 'Mean (mg/dL)', `In range ${rangeText()} (%)`, `Below ${BANDS.low} (%)`, `Under ${BANDS.urgentLow}, urgent (%)`, `Above ${BANDS.high} (%)`, 'Readings'],
+    days.map((d) => [d.label, d.usable ? 'yes' : 'no', d.meanMgdl, d.inRangePct, d.belowPct, d.urgentPct, d.abovePct, d.readings]));
   return (
     <div className="detail-grid">
       <section className="panel stack-12" aria-label="Time in range">
+        <FocusBar covers={`${PERIOD.label} · ${PERIOD.days} days, the period in the top bar`} view={view} onView={setView} onCsv={csv} />
+        {view === 'table' ? (
+          <>
+            <DayPicker value={day} onChange={setDay} />
+            <div className="focus-table-wrap">
+              <table className="table focus-table">
+                <caption className="sr-only">Time in range for each day of the period</caption>
+                <thead><tr><th scope="col">Day</th><th scope="col" className="num">In range</th><th scope="col" className="num">Below {BANDS.low}</th><th scope="col" className="num">Urgent, under {BANDS.urgentLow}</th><th scope="col" className="num">Above {BANDS.high}</th><th scope="col" className="num">Mean, mg/dL</th><th scope="col" className="num">Readings</th></tr></thead>
+                <tbody>{[...days].reverse().map((d) => (
+                  <tr key={d.day} className={d.usable ? undefined : 'muted'}>
+                    <th scope="row">{d.label}{d.usable ? '' : <span className="caption"> · not counted</span>}</th>
+                    <td className="num strong">{pctOr(d.inRangePct)}</td><td className={`num${(d.belowPct ?? 0) >= 4 ? ' low' : ''}`}>{pctOr(d.belowPct)}</td><td className={`num${(d.urgentPct ?? 0) >= 1 ? ' low' : ''}`}>{pctOr(d.urgentPct)}</td><td className={`num${(d.abovePct ?? 0) >= 25 ? ' high' : ''}`}>{pctOr(d.abovePct)}</td><td className="num">{d.meanMgdl ?? '—'}</td><td className="num">{d.readings}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p className="caption">Newest first. {days.length} {days.length === 1 ? 'day' : 'days'} ({dayPickName(day)}). Below {BANDS.low} is marked at 4% or more, urgent at 1% or more and above {BANDS.high} at 25% or more, the common goals.</p>
+          </>
+        ) : (<>
         <div className="row baseline" style={{ gap: 8 }}>
-          <span className="big-num">{READ.inRangePct}%</span>
-          <span className="small">in range, {PERIOD.label} · ↑{READ.inRangeSinceLastVisit} since your last visit</span>
+          <span className="big-num">{READ.mine.inRangePct}%</span>
+          <span className="small">in range {rangeText()}, {PERIOD.label}</span>
+          <DeltaChip now={READ.mine.inRangePct} prev={READ.prev?.inRangePct} unit=" pts" />
         </div>
+        {weakestDay(DAILY.days, READ.mine.inRangePct) && <p className="small ink">{weakestDay(DAILY.days, READ.mine.inRangePct)}</p>}
+        <DayRings days={DAILY.days} today={DAILY.today} />
+        <p className="caption">{ringKey(DAILY.days.length)}</p>
         <div className="row" style={{ alignItems: 'stretch', gap: 24, height: 280 }}>
-          <Fit className="tir-fit">{({ w, h }) => <TirBar W={w} H={h} labels={false} />}</Fit>
+          <Fit className="tir-fit">{({ w, h }) => <TirBar W={w} H={h} labels={false} set="mine" />}</Fit>
           <table className="table">
             <caption className="sr-only">Time in each glucose band</caption>
             <thead><tr><th scope="col">Band</th><th scope="col">mg/dL</th><th scope="col" className="num">You</th><th scope="col">Common goal</th></tr></thead>
             <tbody>
-              {bands().map((b) => (
+              {bands('mine').map((b) => (
                 <tr key={b.key}>
                   <th scope="row"><span className="sw" style={{ background: b.fill }} /> {b.label}</th>
                   <td>{b.range}</td>
@@ -583,11 +679,94 @@ function TimeInRangeDetail() {
             </tbody>
           </table>
         </div>
+        </>)}
       </section>
       <aside className="panel stack-12" aria-label="About the bands">
         <h3 className="h3">About the bands</h3>
-        <p className="small">The five bands from the standard glucose report, the one most clinics print. Sensor worn {READ.sensorWornPct}% of the time, so the 14 days have enough data to read.</p>
+        <p className="small">{isStandard()
+          ? 'The five bands from the standard glucose report, the one most clinics print.'
+          : `Your bands, from Settings → Your ranges: urgent low under ${BANDS.urgentLow}, low ${BANDS.urgentLow}–${BANDS.low - 1}, in range ${rangeText()}. Standard reports score 70–180 with urgent under 54, so these figures won’t match Clarity or a clinic report. The care-team review keeps the standard bands (${READ.inRangePct}% in 70–180).`}</p>
+        <p className="small">Sensor worn {READ.sensorWornPct}% of the time{READ.sensorWornPct >= 70 ? `, so the ${PERIOD.days} days have enough data to read` : `, under the 70% the standard report needs, so read these bands with care`}.</p>
         <p className="small">GMI {READ.gmiPct}% · variability (CV) {READ.cvPct}%.</p>
+        <LowEvents />
+      </aside>
+    </div>
+  );
+}
+
+/**
+ * Lows as events, the phone's rule: 15 minutes under a line starts one, 15 back above ends it.
+ * Low uses your low, urgent your urgent low (Settings → Your ranges). Observations only (SAFE-1).
+ */
+function LowEvents() {
+  const L = DATA.LOWS;
+  const len = (m: number | null) => (m == null ? null : `${Math.round(m)} min`);
+  const row = (name: string, b: typeof L.low) => (
+    <tr key={name}>
+      <th scope="row">{name} <span className="caption">under {b.thresholdMgdl}</span></th>
+      <td className="num strong">{b.all.count}</td>
+      <td className="num">{b.all.count ? b.all.perWeek.toFixed(1) : '—'}</td>
+      <td className="num">{b.all.lowestMgdl ?? '—'}</td>
+    </tr>
+  );
+  const more = [L.low, L.urgentLow].filter((b) => b.all.count).map((b, i) => `${i ? 'Urgent lows' : 'Lows'} usually lasted ${len(b.all.medianDurationMin) ?? 'a short while'}, ${b.overnight.count} overnight`);
+  return (
+    <div className="stack-4 low-events">
+      <h3 className="h3">Lows as events</h3>
+      <table className="table">
+        <caption className="sr-only">Low and urgent-low events over the period</caption>
+        <thead><tr><th scope="col">Band</th><th scope="col" className="num">Events</th><th scope="col" className="num">A week</th><th scope="col" className="num">Lowest</th></tr></thead>
+        <tbody>{row('Low', L.low)}{row('Urgent', L.urgentLow)}</tbody>
+      </table>
+      {more.length > 0 && <p className="small">{more.join('. ')}.</p>}
+      <p className="caption">An event starts after 15 minutes under the line and ends after 15 back above it. Overnight is midnight to 6am. {L.daysCovered} of {L.windowDays} days had readings; a week counts only those days.</p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ key numbers
+
+// The phone's summary tiles (average glucose, estimated A1C, variability), same
+// order and labels. No change chips yet: desktop has no prior-period reading to
+// compare against, and a chip with nothing behind it would be a guess.
+function KeyNumberTiles({ compact = false }: { compact?: boolean }) {
+  // No readings yet: a dash, never a 0 that reads as a real number.
+  const has = Number.isFinite(READ.meanMgdl) && READ.meanMgdl > 0;
+  const p = READ.prev;
+  const items: { label: string; value: string | number; unit: string; sub: string; now: number | null; before: number | null | undefined; dUnit: string; digits?: number }[] = [
+    { label: 'Avg glucose', value: has ? Math.round(READ.meanMgdl) : '—', unit: 'mg/dL', sub: `${PERIOD.days}-day average`, now: has ? Math.round(READ.meanMgdl) : null, before: p?.meanMgdl, dUnit: ' mg/dL' },
+    { label: 'Est. A1C', value: has && Number.isFinite(READ.gmiPct) ? READ.gmiPct : '—', unit: '%', sub: 'GMI', now: has ? READ.gmiPct : null, before: p?.gmiPct, dUnit: ' pts', digits: 1 },
+    { label: 'Variability', value: has && Number.isFinite(READ.cvPct) ? Math.round(READ.cvPct) : '—', unit: '% CV', sub: 'How much glucose swings', now: has ? Math.round(READ.cvPct) : null, before: p?.cvPct, dUnit: ' pts' },
+  ];
+  return (
+    <dl className={`key-numbers${compact ? ' compact' : ''}`}>
+      {items.map((i) => (
+        <div key={i.label} className="key-number">
+          <dt className="label">{i.label}</dt>
+          <dd><span className="big-num">{i.value}</span> <span className="small">{i.unit}</span></dd>
+          {!compact && <dd className="caption">{i.sub}</dd>}
+          {!compact && <dd><DeltaChip now={i.now} prev={i.before} unit={i.dUnit} digits={i.digits} /></dd>}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function KeyNumbersGlance() {
+  return <div className="face"><KeyNumberTiles compact /></div>;
+}
+
+function KeyNumbersDetail() {
+  return (
+    <div className="detail-grid">
+      <section className="panel stack-16" aria-label="Key numbers">
+        {READ.meanMgdl > 0 && <p className="takeaway">Average {Math.round(READ.meanMgdl)} mg/dL over {PERIOD.days} days: an estimated A1C of {READ.gmiPct}% and variability of {Math.round(READ.cvPct)}%{READ.cvPct < 36 ? ', under the common 36% goal' : ', over the common 36% goal'}.</p>}
+        <KeyNumberTiles />
+      </section>
+      <aside className="panel stack-12" aria-label="About these numbers">
+        <h3 className="h3">About these numbers</h3>
+        <p className="small">GMI estimates what an A1C lab test might read from your sensor average. It can differ from a lab result. Variability is the standard deviation as a percent of your average; under 36% is the common goal.</p>
+        <p className="caption">Sensor worn {READ.sensorWornPct}% of the time.</p>
       </aside>
     </div>
   );
@@ -612,7 +791,7 @@ function DeviceRows() {
           <li><span className="label">Sensor</span><b>{PATIENT.sensorDay.replace(/^Sensor /, '')}</b><span className="caption">since the last sensor start</span></li>
         </>
       )}
-      {buildDays != null && <li><span className="label">Build</span><b>{buildDays < 0 ? 'Expired' : `${buildDays} days`}</b><span className="caption">{buildDays < 0 ? 'build again' : 'until TestFlight expires'}</span></li>}
+      {buildDays != null && <li><span className="label">Build</span><b>{buildDays < 0 ? 'Expired' : <>{buildDays}<small> days</small></>}</b><span className="caption">{buildDays < 0 ? 'build again' : 'left on TestFlight'}</span></li>}
     </ul>
   );
 }
@@ -631,9 +810,10 @@ function DeviceLifeDetail() {
       <aside className="panel stack-12" aria-label="Your system">
         <h3 className="h3">Your system</h3>
         <dl className="facts">
-          <div><dt>App</dt><dd>Loop 3.6</dd></div>
-          <div><dt>Pump</dt><dd>Omnipod DASH</dd></div>
-          <div><dt>CGM</dt><dd>Dexcom G7</dd></div>
+          {/* From the data (Nightscout's devicestatus, or the sample patient), never typed in: it was hardcoded until Nov 24. */}
+          {PATIENT.setup.split(' · ').map((part, i, all) => (
+            <div key={i}><dt>{all.length === 3 ? ['App', 'Pump', 'CGM'][i] : i === 0 ? 'System' : 'Device'}</dt><dd>{part}</dd></div>
+          ))}
           <div><dt>Looping</dt><dd>{READ.automationPct}% of the time</dd></div>
           <div><dt>Gaps</dt><dd>{READ.automationGaps}</dd></div>
         </dl>
@@ -663,12 +843,16 @@ export function Thread({ side, limit }: { side: 'patient' | 'clinician'; limit?:
 // ------------------------------------------------------------ registry
 
 export const FACES: Record<TileKind, { Glance: (p: FaceProps) => ReactNode; Detail: (p: FaceProps) => ReactNode }> = {
+  'hour-evidence': { Glance: HourEvidence, Detail: HourEvidence },
+  'review-queue': { Glance: ReviewQueue, Detail: ReviewQueue },
   'glucose-now': { Glance: GlucoseNowGlance, Detail: GlucoseNowDetail },
   'heads-ups': { Glance: HeadsUpsGlance, Detail: HeadsUpsDetail },
   'day-tracker': { Glance: DayTrackerGlance, Detail: DayTrackerDetail },
   'what-loop-did': { Glance: WhatLoopDidPatternsGlance, Detail: WhatLoopDidPatternsDetail },
   'before-after': { Glance: BeforeAfterGlance, Detail: BeforeAfterDetail },
   'time-in-range': { Glance: TimeInRangeGlance, Detail: TimeInRangeDetail },
+  'key-numbers': { Glance: KeyNumbersGlance, Detail: KeyNumbersDetail },
+  'hour-by-hour': { Glance: HourByHourGlance, Detail: HourByHourDetail },
   'device-life': { Glance: DeviceLifeGlance, Detail: DeviceLifeDetail },
   'care-thread': { Glance: CareThreadGlance, Detail: CareThreadDetail },
   meals: { Glance: FavoriteFoodsGlance, Detail: FavoriteFoodsDetail },

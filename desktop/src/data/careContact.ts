@@ -2,6 +2,7 @@
 // (browser storage, per viewer). Nothing is sent from LoopStack: Email opens
 // a new message in your own mail app, addressed and filled in, for you to send.
 import { useEffect, useState } from 'react';
+import { useNotes } from './notes';
 
 export interface CareContact { name: string; email: string }
 /** `at` is when it was written (ms); older notes carry it in their id instead. */
@@ -24,7 +25,12 @@ function write(key: string, value: unknown) {
 }
 
 /** One plain address: something@domain.tld, no spaces, commas or extra recipients. */
-export const isEmail = (s: string) => /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/.test(s.trim());
+export const isEmail = (s: unknown): s is string => typeof s === 'string' && /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/.test(s.trim());
+
+export function cleanNotes(value: unknown): CareNote[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((n): n is CareNote => Boolean(n) && typeof n.id === 'string' && typeof n.date === 'string' && typeof n.text === 'string');
+}
 
 /** A mailto link for one recipient. Subject and body are encoded, so nothing in them can add recipients or headers. */
 export function mailto(to: string, subject: string, body: string) {
@@ -48,7 +54,7 @@ function useBump() {
 export function useCareContact(): [CareContact | null, (c: CareContact | null) => void] {
   useBump();
   const c = read<CareContact | null>(CONTACT_KEY, null);
-  const valid = c && isEmail(c.email) ? c : null;
+  const valid = c && typeof c.name === 'string' && isEmail(c.email) ? c : null;
   return [valid, (next) => {
     if (next) write(CONTACT_KEY, { name: next.name.trim(), email: next.email.trim() });
     else { try { window.localStorage.removeItem(CONTACT_KEY); } catch { /* nothing stored */ } }
@@ -56,18 +62,28 @@ export function useCareContact(): [CareContact | null, (c: CareContact | null) =
   }];
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dateLabel = (ms: number) => { const d = new Date(ms); return `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
+
+/**
+ * The notes for the care team: the ones written here before (kept as they were) plus every note
+ * flagged "For my endo" in Notes. New ones are written to the Notes store, so there is one place
+ * they live; removing one from the care team's list archives it there (it isn't lost).
+ */
 export function useCareNotes(): [CareNote[], { add: (text: string, date: string) => void; remove: (id: string) => void }] {
   useBump();
-  const notes = read<CareNote[]>(NOTES_KEY, []).filter((n) => n && typeof n.text === 'string');
+  const [stored, actions] = useNotes();
+  const legacy = cleanNotes(read<unknown>(NOTES_KEY, []));
+  const fromNotes: CareNote[] = stored
+    .filter((n) => n.forEndo && n.status === 'open')
+    .map((n) => ({ id: n.id, date: dateLabel(n.at), text: n.text, at: n.at }));
+  const notes = [...legacy, ...fromNotes].sort((a, b) => noteTime(a) - noteTime(b));
   return [notes, {
-    add: (text, date) => {
-      const t = text.trim();
-      if (!t) return;
-      const at = Date.now();
-      write(NOTES_KEY, [...notes, { id: `${at.toString(36)}${Math.random().toString(36).slice(2, 6)}`, date, text: t.slice(0, 2000), at }]);
-      notify();
+    add: (text) => { actions.add({ text, anchor: null, snapshot: null, destination: 'endo' }); },
+    remove: (id) => {
+      if (stored.some((n) => n.id === id)) actions.setStatus(id, 'archived');
+      else { write(NOTES_KEY, legacy.filter((n) => n.id !== id)); notify(); }
     },
-    remove: (id) => { write(NOTES_KEY, notes.filter((n) => n.id !== id)); notify(); },
   }];
 }
 

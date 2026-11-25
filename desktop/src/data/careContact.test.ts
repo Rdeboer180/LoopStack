@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { isEmail, mailto, notesBody, noteTime, splitAtVisit } from './careContact';
+import { cleanNotes, isEmail, mailto, notesBody, noteTime, splitAtVisit } from './careContact';
 
 describe('care-team email', () => {
+  it('recovers from malformed stored contacts and notes', () => {
+    expect(isEmail(undefined)).toBe(false);
+    expect(isEmail({})).toBe(false);
+    expect(cleanNotes(null)).toEqual([]);
+    expect(cleanNotes({ text: 'broken' })).toEqual([]);
+    expect(cleanNotes([null, { text: 'missing id' }, { id: 'a', date: 'Nov 21', text: 'A note' }])).toEqual([{ id: 'a', date: 'Nov 21', text: 'A note' }]);
+  });
   it('takes one plain address only', () => {
     expect(isEmail('clinic@example.org')).toBe(true);
     expect(isEmail(' clinic@example.org ')).toBe(true);

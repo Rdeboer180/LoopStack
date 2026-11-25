@@ -15,6 +15,7 @@ import type {
   FixLogItem,
   FixLogSourceKind,
 } from '@/data/types';
+import { TrackedSection } from '@/components/TrackedSection/TrackedSection';
 import { ChangeHandoff } from '@/components/ChangeHandoff/ChangeHandoff';
 import { surfaceFor } from '@/lib/loop/changeSurface';
 import { isPromoted } from '@/lib/loop/signalTier';
@@ -300,6 +301,8 @@ export function FixLog() {
             ))}
           </Section>
         ) : null}
+
+        <TrackedSection />
       </main>
     </>
   );

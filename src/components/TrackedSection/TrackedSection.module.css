@@ -1,0 +1,123 @@
+.empty {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--text-small-lh);
+  color: var(--ink-700);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-input);
+  background: var(--surface-1);
+}
+
+.id {
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+  font-weight: 600;
+  color: var(--ink-900);
+}
+
+.meta {
+  font-size: var(--text-small);
+  line-height: var(--text-small-lh);
+  color: var(--ink-700);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.btn {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-button);
+  border: 1px solid var(--ink-300);
+  background: var(--surface-1);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  color: var(--ink-600);
+  cursor: default;
+}
+
+.btnPrimary:disabled {
+  background: var(--surface-2, var(--surface-1));
+  border-color: var(--ink-300);
+  color: var(--ink-600);
+}
+
+.btn:focus-visible,
+.textarea:focus-visible {
+  outline: var(--focus-ring-width) solid var(--ink-900);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.btnPrimary {
+  background: var(--ink-900);
+  border-color: var(--ink-900);
+  color: var(--surface-1);
+}
+
+.paste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-3);
+}
+
+.label {
+  font-size: var(--text-small);
+  line-height: var(--text-small-lh);
+  color: var(--ink-700);
+}
+
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--ink-300);
+  border-radius: var(--radius-input);
+  background: var(--surface-1);
+  color: var(--ink-900);
+  font: inherit;
+  /* 16px or more, or iOS zooms the page in when the box gets focus. */
+  font-size: 16px;
+}
+
+.status,
+.error {
+  margin: var(--space-2) 0 0;
+  min-height: var(--text-small-lh);
+  font-size: var(--text-small);
+  line-height: var(--text-small-lh);
+  color: var(--ink-700);
+}
+
+.error {
+  color: var(--ink-900);
+  font-weight: 500;
+}

@@ -26,7 +26,7 @@ describe('care-team review read (VIS-10)', () => {
     const lines = tldrLines();
     expect(lines.map((l) => l.title)).toEqual(['Pattern', 'What Loop did', 'Since last visit']);
     expect(lines[1].text).toMatch(/algorithm-modulated/);
-    expect(lines[1].text).toMatch(/28% below/);
+    expect(lines[1].text).toMatch(/12 of 14 days, a median 0.42 U\/hr below/); // the same detector as What Loop did
     expect(lines[2].text).toMatch(/20 mg\/dL lower/);
     for (const l of lines) expect(l.text).not.toMatch(/\b(?:increase|lower|raise) your\b/i);
   });

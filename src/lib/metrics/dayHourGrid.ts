@@ -38,6 +38,8 @@ export type HourCell = {
   hour: number;
   /** Weeks with enough readings in this hour to have an opinion. */
   weeksVoted: number;
+  /** Local hour occurrences for the desktop drill-down. Includes partial hours. */
+  samples?: { firstIso: string; count: number; below: number; above: number; medianMgdl: number }[];
   /** Median of each voting week's median — robust to one wild week. */
   medianMgdl: number | null;
   /** Share of readings in range, across voting weeks. */
@@ -141,6 +143,7 @@ export function computeDayHourGrid(input: {
   carbs?: CarbEntry[];
   /** Only the last this-many weeks count. Omit to use everything passed in. */
   weeks?: number;
+  includeSamples?: boolean;
 }): DayHourGrid {
   const { target, now } = input;
   const fromMs = input.weeks != null ? now.getTime() - input.weeks * 7 * 24 * 3600_000 : -Infinity;
@@ -229,6 +232,13 @@ export function computeDayHourGrid(input: {
       hours.push({
         hour,
         weeksVoted,
+        ...(input.includeSamples && { samples: weeks.filter(w => w.first).map(w => ({
+          firstIso: new Date(w.first!.ms).toISOString(),
+          count: w.values.length,
+          below: w.low,
+          above: w.high,
+          medianMgdl: Math.round(median(w.values)!),
+        })).sort((a, b) => b.firstIso.localeCompare(a.firstIso)) }),
         reliable,
         medianMgdl: reliable ? Math.round(median(perWeekMedians) ?? 0) : null,
         inRangePct:

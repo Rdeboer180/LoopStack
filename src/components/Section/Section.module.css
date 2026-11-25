@@ -112,3 +112,6 @@
 .titleRow .title {
   flex: 1;
 }
+
+/* Tappable rows are at least 44pt tall (UX sweep, Nov 23). */
+.rowInteractive { min-height: var(--tap-target-min); }

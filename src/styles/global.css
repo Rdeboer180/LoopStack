@@ -75,3 +75,7 @@ body {
   color: var(--ink-500);
   font-weight: 500;
 }
+
+/* Checkboxes big enough to hit, inside a 44pt row (UX sweep, Nov 23). */
+input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--brand-primary); flex: none; }
+label:has(> input[type="checkbox"]) { min-height: var(--tap-target-min); display: flex; align-items: center; gap: 10px; }

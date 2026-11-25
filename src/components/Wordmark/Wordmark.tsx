@@ -10,7 +10,7 @@ export function Wordmark({ size = 'md', withMark = false }: Props) {
     <span
       className={`${styles.wordmark} ${styles[size]}`}
       role="img"
-      aria-label="LoopStack — understand, adapt, improve"
+      aria-label="LoopStack"
     >
       {withMark && <LogoMark className={styles.mark} />}
       <span className={styles.loop}>Loop</span>

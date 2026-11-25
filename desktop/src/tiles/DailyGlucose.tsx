@@ -3,10 +3,12 @@
 // weekday hour by hour: this is day after day. Observations only (SAFE-1).
 import { useState } from 'react';
 import { DailyChart } from '../charts/DailyChart';
-import { DAILY, NOT_COUNTED, NOT_COUNTED_CAUSE, PERIOD } from '../data/current';
+import { DAILY, NOT_COUNTED, NOT_COUNTED_CAUSE, PERIOD, READ } from '../data/current';
+import { DayRings, ringTakeaway } from '../ui/DayRings';
 import { Fit } from '../ui/kit';
 import type { FaceProps } from './faces';
 import './daily.css';
+import { BANDS, rangeText } from '../data/ranges';
 
 function summary() {
   const counted = DAILY.days.filter((d) => d.usable && d.meanMgdl != null);
@@ -17,7 +19,7 @@ function summary() {
 }
 
 function Legend() {
-  return <span className="caption">Dot: the day’s average · bar: its middle half · line: 5–95% · dashed: {PERIOD.days}-day average · 70–180 mg/dL shaded</span>;
+  return <span className="caption">Dot: the day’s average · bar: its middle half · line: 5–95% · dashed: {PERIOD.days}-day average · {rangeText()} mg/dL shaded</span>;
 }
 
 export function DailyGlucoseGlance({ h }: FaceProps) {
@@ -31,6 +33,7 @@ export function DailyGlucoseGlance({ h }: FaceProps) {
       </div>
       <Fit className="grow" minH={80}>{({ w, h: hh }) => <DailyChart days={DAILY.days} today={t} W={w} H={hh} />}</Fit>
       {h > 2 && <Legend />}
+      {h > 3 && <DayRings days={DAILY.days.slice(-5)} today={t} size={32} />}
     </div>
   );
 }
@@ -39,6 +42,10 @@ export function DailyGlucoseDetail() {
   const { counted, mean, hi, lo } = summary();
   const rows = DAILY.today ? [...DAILY.days, DAILY.today] : [...DAILY.days];
   const [sel, setSel] = useState<number | null>(null);
+  // A long period keeps the table to its last 4 weeks until asked: 180 rows is a wall, not a read.
+  const [allRows, setAllRows] = useState(false);
+  const SHOWN = 28;
+  const firstShown = allRows || rows.length <= SHOWN + 7 ? 0 : rows.length - SHOWN;
   return (
     <div className="detail-grid">
       <section className="panel stack-12" aria-label="Daily glucose chart">
@@ -46,15 +53,18 @@ export function DailyGlucoseDetail() {
           <span className="sample">{PERIOD.label} · {counted.length} of {DAILY.days.length} days counted</span>
           {DAILY.today && <span className="caption">Today so far: {DAILY.today.readings} readings</span>}
         </div>
+        <p className="takeaway">{ringTakeaway(DAILY.days, READ.mine.inRangePct)}</p>
         <Fit className="chart-lg">{({ w, h }) => <DailyChart days={DAILY.days} today={DAILY.today} W={w} H={h} values sel={sel} />}</Fit>
         <Legend />
+        <p className="caption">In range is {rangeText()} mg/dL, your band. The rings by day live in Time in range; the table below has every day.</p>
         <table className="daily-table">
-          <caption className="sr-only">Glucose for each day: average, middle half, time in range, below 70, above 180 and readings</caption>
+          <caption className="sr-only">Glucose for each day: average, middle half, time in range, below and above your band, and readings</caption>
           <thead>
-            <tr><th scope="col">Day</th><th scope="col">Average</th><th scope="col">Middle half</th><th scope="col">In range</th><th scope="col">Below 70</th><th scope="col">Above 180</th><th scope="col">Readings</th></tr>
+            <tr><th scope="col">Day</th><th scope="col">Average</th><th scope="col">Middle half</th><th scope="col">In range</th><th scope="col">Below {BANDS.low}</th><th scope="col">Above {BANDS.high}</th><th scope="col">Readings</th></tr>
           </thead>
           <tbody>
             {rows.map((d, i) => {
+              if (i < firstShown) return null;
               const isToday = DAILY.today != null && i === rows.length - 1;
               const missing = d.meanMgdl == null || (!d.usable && !isToday);
               return (
@@ -77,6 +87,11 @@ export function DailyGlucoseDetail() {
             })}
           </tbody>
         </table>
+        {rows.length > SHOWN + 7 && (
+          <button type="button" className="text-btn" aria-expanded={allRows} onClick={() => setAllRows((v) => !v)}>
+            {allRows ? `Show the last ${SHOWN} days` : `Show all ${rows.length} days`}
+          </button>
+        )}
       </section>
       <aside className="panel stack-12" aria-label="About daily glucose">
         <h3 className="h3">Day after day</h3>

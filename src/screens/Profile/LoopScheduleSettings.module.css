@@ -261,3 +261,6 @@
   font-weight: 600;
   color: var(--ink-900);
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.editToggle, .confirmBtn { min-height: var(--tap-target-min); }

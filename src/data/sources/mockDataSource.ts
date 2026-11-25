@@ -93,7 +93,7 @@ const sampleTimeTrends = (() => {
   let seed = 7;
   const noise = () => {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return (seed / 0x7fffffff - 0.5) * 40;
+    return (seed / 0x7fffffff - 0.5) * 130;
   };
   for (let d = 0; d < 42; d++) {
     const day = new Date(start.getTime() + d * 24 * 3600_000);
@@ -102,10 +102,13 @@ const sampleTimeTrends = (() => {
       for (let q = 0; q < 4; q++) {
         const t = new Date(day);
         t.setHours(h, q * 15, 0, 0);
-        // Dawn rise, a dinner-hour (18–20) climb, weekend elevation.
+        // Dawn rise, lunch and dinner climbs, weekend elevation. The spread is wide enough that
+        // days average near the sample's 74% in range (65–84% a day), so the day rings agree
+        // with the headline instead of every day reading 99–100% (UX sweep, Nov 23).
         let base = 120;
-        if (h >= 4 && h < 8) base += 12;
-        if (h >= 18 && h < 21) base += 34;
+        if (h >= 4 && h < 8) base += 25;
+        if (h >= 12 && h < 15) base += 50;
+        if (h >= 18 && h < 22) base += 80;
         if (h >= 0 && h < 3) base -= 10;
         if (weekend) base += 14;
         readings.push({ iso: t.toISOString(), mgdl: Math.round(base + noise()) });

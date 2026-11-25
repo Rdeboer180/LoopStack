@@ -137,7 +137,7 @@ describe('computeBasalInsights', () => {
   it('flags a sustained gap between delivered and scheduled basal', () => {
     const r = computeBasalInsights({
       glucose: [], carbs: [], insulin: [], therapy, windowDays: 14, now: NOW,
-      deliveredDailyU: 25, // the sample schedule is 19.75
+      deliveredDailyU: 20, // schedule is ~14.8
     });
     expect(r.deliveryDeltaU).toBeGreaterThan(0);
     expect(r.suggestions.some((s) => /more basal than the schedule/.test(s))).toBe(true);

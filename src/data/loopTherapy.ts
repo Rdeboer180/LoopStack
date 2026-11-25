@@ -1,11 +1,15 @@
-// Sample Loop therapy settings: a made-up, typical adult schedule, used as
-// LoopStack's defaults when your own data doesn't say (for example, the
-// glucose safety limit, which Nightscout doesn't carry). They are NOT a
-// recommendation: everyone's settings are different, and yours come from your
-// own Loop and your care team.
+// Ryan's real Loop therapy settings, transcribed from the Loop app
+// (Settings → Therapy Settings, 2026-07-23).
 //
-// Schedules change by time of day, so a value only applies from its start
-// until the next entry. Nothing here is written back to Loop.
+// WHY THIS EXISTS AND WHY IT MATTERS FOR SAFETY: the strategy engine used to
+// read a single sample carb ratio of 10 g/U. Ryan's real carb ratio is
+// ~25–28 g/U — nearly 3× weaker — so the old default suggested ~2.5× too much
+// insulin for any meal. These are the actual settings Loop is running, and they
+// are schedule-based (they change by time of day), so a dose is only right if
+// it uses the value that applies at the moment the meal is eaten.
+//
+// Nothing here is written back to Loop. This is LoopStack's mirror of what Loop
+// is configured with, so its own suggestions are measured against reality.
 //
 // Times are minutes from local midnight. Each entry applies from its start
 // until the next entry; the schedule is cyclic over 24h.
@@ -35,42 +39,50 @@ export type LoopTherapy = {
 const H = (h: number, m = 0) => h * 60 + m;
 
 export const realLoopTherapy: LoopTherapy = {
-  glucoseSafetyLimitMgdl: 80,
+  glucoseSafetyLimitMgdl: 85,
 
   correctionRange: [
-    { startMinutes: H(0), low: 100, high: 110 },
-    { startMinutes: H(7), low: 100, high: 115 },
-    { startMinutes: H(22), low: 105, high: 115 },
+    { startMinutes: H(0), low: 105, high: 115 },
+    { startMinutes: H(6), low: 110, high: 130 },
+    { startMinutes: H(8), low: 110, high: 115 },
+    { startMinutes: H(14), low: 112, high: 125 },
   ],
 
-  preMealRange: { low: 85, high: 95 },
+  preMealRange: { low: 90, high: 95 },
 
   carbRatioSchedule: [
-    { startMinutes: H(0), value: 12 },
-    { startMinutes: H(11), value: 13 },
-    { startMinutes: H(17), value: 12 },
+    { startMinutes: H(0), value: 27.8 },
+    { startMinutes: H(13), value: 28.5 },
+    { startMinutes: H(15, 30), value: 25.5 },
   ],
 
   basalSchedule: [
-    { startMinutes: H(0), value: 0.85 },
-    { startMinutes: H(3), value: 0.95 },
-    { startMinutes: H(7), value: 0.8 },
-    { startMinutes: H(12), value: 0.7 },
-    { startMinutes: H(17), value: 0.8 },
-    { startMinutes: H(21), value: 0.9 },
+    { startMinutes: H(0), value: 0.8 },
+    { startMinutes: H(2, 30), value: 0.7 },
+    { startMinutes: H(5, 30), value: 0.65 },
+    { startMinutes: H(8), value: 0.45 },
+    { startMinutes: H(10), value: 0.65 },
+    { startMinutes: H(11), value: 0.75 },
+    { startMinutes: H(12, 30), value: 0.55 },
+    { startMinutes: H(14), value: 0.4 },
+    { startMinutes: H(15, 30), value: 0.5 },
+    { startMinutes: H(17, 30), value: 0.6 },
+    { startMinutes: H(23), value: 0.7 },
   ],
 
   insulinSensitivitySchedule: [
-    { startMinutes: H(0), value: 50 },
-    { startMinutes: H(6), value: 45 },
-    { startMinutes: H(12), value: 55 },
-    { startMinutes: H(18), value: 50 },
+    { startMinutes: H(0), value: 40 },
+    { startMinutes: H(4, 30), value: 42 },
+    { startMinutes: H(6, 30), value: 45 },
+    { startMinutes: H(15, 30), value: 50 },
+    { startMinutes: H(17, 30), value: 44 },
+    { startMinutes: H(22), value: 40 },
   ],
 
-  maxBasalRate: 3,
-  maxBolus: 8,
+  maxBasalRate: 3.75,
+  maxBolus: 3,
   insulinDurationHours: 6,
-  capturedIso: '2026-01-01T12:00:00Z',
+  capturedIso: '2026-07-23T11:18:00Z',
 };
 
 /** Minutes from local midnight for a Date. */

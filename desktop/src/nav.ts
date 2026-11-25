@@ -6,17 +6,21 @@
 //   ?view=dashboard&tile=what-loop-did&detail=1   a tile's detail face
 //   ?view=review&patient=sam&section=loop   the care-team review
 //   ?view=suggestions                       suggestions, tracked to confidence
+//   ?view=notes                             your notes, to sort for the endo or LoopStack
 //   ?view=library                           the feature library
 //   ?reset=1                                clear the saved layout
 import type { Mode } from './data/derive';
 import type { ReviewSection } from './data/review';
 import { ALL_KINDS, PRESET_IDS, type PresetId, type TileKind } from './layout/model';
 
-export type View = 'dashboard' | 'review' | 'changes' | 'suggestions' | 'library' | 'assistant' | 'settings';
-const VIEWS: View[] = ['dashboard', 'review', 'changes', 'suggestions', 'library', 'assistant', 'settings'];
+export type View = 'dashboard' | 'review' | 'notes' | 'changes' | 'suggestions' | 'library' | 'assistant' | 'settings';
+const VIEWS: View[] = ['dashboard', 'review', 'notes', 'changes', 'suggestions', 'library', 'assistant', 'settings'];
 const SECTIONS: ReviewSection[] = ['glucose', 'loop', 'changes', 'trends', 'notes'];
 
+export interface HourSelection { weekday: number; hour: number }
+
 export interface Route {
+  evidence?: HourSelection;
   view: View;
   edit: boolean;
   /** The tile whose detail face is open. */
@@ -47,9 +51,14 @@ export function parse(search: string): Boot {
   const s = q.get('section');
   const mode: Mode = q.get('mode') === 'blocks' ? 'blocks' : 'hours';
   const p = q.get('preset');
+  const wd = q.get('weekday') ?? '';
+  const hr = q.get('hour') ?? '';
+  const evidence = /^[0-6]$/.test(wd) && /^(?:[0-9]|1[0-9]|2[0-3])$/.test(hr) &&
+    (view === 'dashboard' || view === 'assistant') ? { weekday: Number(wd), hour: Number(hr) } : undefined;
   return {
     route: {
       view,
+      evidence,
       edit: view === 'dashboard' && q.get('edit') === '1',
       tile: view === 'dashboard' ? tile : null,
       patient: q.get('patient') || 'sam',
@@ -65,6 +74,10 @@ export function parse(search: string): Boot {
 export function toSearch(r: Route): string {
   const q = new URLSearchParams();
   q.set('view', r.view);
+  if (r.evidence && (r.view === 'dashboard' || r.view === 'assistant')) {
+    q.set('weekday', String(r.evidence.weekday));
+    q.set('hour', String(r.evidence.hour));
+  }
   if (r.view === 'dashboard') {
     if (r.edit) q.set('edit', '1');
     if (r.tile) {

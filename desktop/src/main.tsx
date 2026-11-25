@@ -5,6 +5,8 @@ import { StoreProvider } from './state';
 import { onDatasetChange } from './data/current';
 import { boot } from './data/source';
 import { bootLoopBuild } from './data/loopBuild';
+import { bootBuildNotes } from './data/buildNotes';
+import { scheduleOnMac } from './data/notify';
 import { loadWorkspace, resolvedAppearance } from './layout/saved';
 // Tokens come from the LoopStack system, not a copy (COL-1).
 import '../../src/styles/tokens.css';
@@ -36,8 +38,15 @@ function Root() {
 // data rather than the sample patient's under the person's name.
 if (window.loopstack?.nightscout) rootEl.innerHTML = '<p class="boot-note">Reading your Nightscout…</p>';
 void bootLoopBuild().catch(() => undefined);
+bootBuildNotes();
+// Heads-ups queue while the app is open, rebuilt each time the data is read again (and every 6 hours, so weekly ones come round again).
+scheduleOnMac();
+onDatasetChange(() => { scheduleOnMac(); });
+window.setInterval(() => { scheduleOnMac(); }, 6 * 3_600_000);
 void boot().then((error) => {
-  if (error) window.sessionStorage.setItem('loopstack.ns.error', error);
+  if (error) {
+    try { window.sessionStorage.setItem('loopstack.ns.error', error); } catch { /* Rendering must not depend on browser storage. */ }
+  }
   createRoot(rootEl).render(
     <StrictMode>
       <Root />

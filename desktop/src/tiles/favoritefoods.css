@@ -28,7 +28,7 @@
 .ff-card-name { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 15px; line-height: 20px; overflow-wrap: anywhere; }
 .ff-card-chev { flex: none; display: inline-flex; color: var(--ink-700); transform: rotate(90deg); transition: transform 200ms ease; }
 .ff-card[aria-expanded='true'] .ff-card-chev { transform: rotate(-90deg); }
-.ff-card-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 8px; margin-top: auto; }
+.ff-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
 .ff-tracked { flex: none; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--brand-primary); color: var(--ink-900); font-weight: 600; }
 .ff-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: var(--surface-2); }
 .ff-bar i { display: block; flex-basis: 0; }
@@ -44,7 +44,7 @@
 .ff-expand::before {
   content: ''; position: absolute; top: -7px; left: var(--notch, 50%); width: 14px; height: 14px; margin-left: -7px; z-index: 1;
   background: var(--surface-0); border-left: 1px solid var(--brand-primary); border-top: 1px solid var(--brand-primary); transform: rotate(45deg);
-  transition: left 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The notch follows the chosen food immediately. Avoid animating layout. */
 }
 .ff-expand.closing::before { opacity: 0; }
 .ff-swap { min-height: 0; min-width: 0; overflow: hidden; }
@@ -149,3 +149,74 @@
 .ff-low.t3 { background: color-mix(in srgb, var(--range-low) 28%, transparent); }
 .ff-low.t3 i { background: var(--range-low); }
 .ff-low.none { padding: 0; font-weight: 400; }
+
+/* Home card: the most recent time over the usual curve (the board's "recent meal first"). */
+.ff-card-chart { display: block; width: 100%; height: 56px; border-radius: 8px; margin-top: 8px; }
+.ff-card-fit { width: 100%; height: 100%; border-radius: 8px; overflow: hidden; }
+.ff-word.high { color: var(--range-high-ink, var(--ink-900)); font-weight: 600; }
+.ff-word.low { color: var(--range-low-ink, var(--range-low)); font-weight: 600; }
+.ff-word.in { color: var(--ink-700); }
+
+/* The focused food: typical first, one scope switch, the times on request, this time vs typical. */
+.ff-focus { display: flex; flex-direction: column; gap: var(--space-3); }
+.ff-focus-head { gap: var(--space-2) var(--space-3); align-items: center; }
+.ff-focus-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr); gap: var(--space-4); align-items: start; }
+.ff-focus.wide .ff-focus-grid { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); }
+@media (max-width: 1100px) { .ff-focus-grid, .ff-focus.wide .ff-focus-grid { grid-template-columns: 1fr; } }
+.ff-focus .ff-dd-chart { height: 170px; }
+.ff-focus-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.ff-focus-stats > span { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius-input); background: var(--surface-1); min-width: 0; }
+.ff-focus-stats > span.full { grid-column: 1 / -1; }
+.ff-focus-stats b { font-size: 22px; line-height: 28px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-900); }
+.ff-focus-stats b.ff-dd-out { font-size: 15px; line-height: 20px; }
+.ff-focus-stats > .ff-dur { grid-column: 1 / -1; }
+.ff-focus-times { display: flex; flex-direction: column; gap: var(--space-2); border-top: 1px solid var(--ink-200); padding-top: var(--space-2); }
+.ff-disc { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink-900); cursor: pointer; align-self: flex-start; }
+.ff-disc .ff-disc-chev { display: inline-flex; transition: transform 200ms cubic-bezier(0.2, 0.8, 0, 1); }
+.ff-disc[aria-expanded='true'] .ff-disc-chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .ff-disc .ff-disc-chev { transition: none; } }
+.ff-times { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ff-time { width: 100%; display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(90px, 1fr) minmax(130px, 1.2fr) auto minmax(80px, 0.8fr); align-items: center; gap: var(--space-3); min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-input); background: transparent; font: inherit; font-size: 14px; color: var(--ink-900); text-align: left; cursor: pointer; }
+.ff-time:hover { background: var(--surface-1); }
+.ff-time[aria-pressed='true'] { background: var(--brand-primary-soft); }
+.ff-time:focus-visible { outline: 2px solid var(--glass-focus-ring); outline-offset: 2px; }
+.ff-time-when { font-weight: 600; }
+@media (max-width: 1100px) { .ff-time { grid-template-columns: 1fr 1fr; row-gap: 2px; padding: 8px var(--space-3); } }
+.ff-vs { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); padding: 12px 14px; border-radius: var(--radius-input); border: 1px solid var(--glass-green-border); background: var(--surface-0); }
+.ff-vs dt { font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-600); }
+.ff-vs dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) { .ff-vs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* The card chart spans the food's own window; the sticker names it in half hours. */
+.ff-card-chart { position: relative; }
+.ff-sticker { position: absolute; top: -10px; right: 4px; padding: 1px 7px; border-radius: var(--radius-pill); background: var(--surface-0); box-shadow: var(--shadow-card); border: 1px solid var(--ink-200); font-size: 11px; line-height: 16px; font-weight: 600; color: var(--ink-900); font-variant-numeric: tabular-nums; }
+
+/* The card footer: a count line, then one dot per time (last ten, oldest left) with the newest three barred. */
+.ff-card-foot { flex-direction: column; align-items: flex-start; gap: 6px; }
+.ff-dots-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.ff-dots { display: flex; align-items: flex-end; gap: 5px; height: 24px; }
+.ff-dot { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ff-dot svg { display: block; }
+.ff-dot.in path { fill: var(--range-in); }
+.ff-dot.high path, .ff-dot.low path { fill: var(--ff-t2); }
+.ff-dot.highX path, .ff-dot.lowX path { fill: var(--range-low); }
+.ff-dot i { display: block; width: 10px; height: 3px; border-radius: 2px; background: transparent; }
+.ff-dot.recent i { background: var(--ink-900); }
+
+/* A food by day of the week (Nov 24). Each day: count, one mark per time (shape and colour), a word. */
+.ff-weekday { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--radius-input); background: var(--surface-1); }
+.ff-weekday-h { font-size: 13px; font-weight: 600; color: var(--ink-900); }
+.ff-wd-row { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.ff-wd { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 12px; background: var(--surface-0); border: 1px solid transparent; text-align: center; min-width: 0; }
+.ff-wd.empty { background: transparent; border: 1px dashed var(--ink-200); }
+.ff-wd.stand { border-color: var(--ink-900); }
+.ff-wd-day { font-size: 11px; font-weight: 600; color: var(--ink-700); text-transform: uppercase; letter-spacing: 0.04em; }
+.ff-wd b { font-size: 18px; line-height: 22px; font-variant-numeric: tabular-nums; }
+.ff-wd .caption { font-size: 11px; line-height: 14px; overflow-wrap: anywhere; }
+.ff-wd-marks { display: flex; gap: 3px; min-height: 8px; flex-wrap: wrap; justify-content: center; }
+.ff-wd-mark { width: 8px; height: 8px; border-radius: 50%; background: var(--range-in); }
+.ff-wd-mark.low { background: var(--range-low); border-radius: 1px; transform: rotate(45deg) scale(0.85); }
+.ff-wd-mark.high { background: var(--range-high); border-radius: 1px; }
+.ff-wd-note { margin: 0; font-size: 13px; line-height: 19px; color: var(--ink-900); }
+.ff-wd-tag { display: inline-block; margin-right: 6px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-0); border: 1px solid var(--ink-200); font-size: 11px; font-weight: 600; }
+.ff-wd-note.meal\+weekday .ff-wd-tag, .ff-wd-note.weekday .ff-wd-tag { border-color: var(--ink-900); }

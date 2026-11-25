@@ -22,8 +22,14 @@ export function snapshot(v: unknown, fallback = defaultLayout()): ViewSnapshot {
   };
 }
 
+function upgradeEveryday(state: Workspace): Workspace {
+  const layout = state.current.layout;
+  if (state.activeId || layout.preset !== 'everyday' || layout.tiles.some(t => t.id === 'hour-evidence')) return state;
+  return { ...state, current: { ...state.current, layout: defaultLayout() } };
+}
+
 export function loadWorkspace(store: KV | null): Workspace {
-  const fallback: Workspace = { version: 1, current: snapshot(null, load(store)), activeId: null, saved: [] };
+  const fallback = upgradeEveryday({ version: 1, current: snapshot(null, load(store)), activeId: null, saved: [] });
   try {
     const value = JSON.parse(store?.getItem(VIEW_KEY) ?? 'null');
     if (value?.version !== 1 || !Array.isArray(value.saved)) return fallback;
@@ -34,7 +40,7 @@ export function loadWorkspace(store: KV | null): Workspace {
       seen.add(row.id);
       saved.push({ id: row.id, name: row.name.trim().slice(0, 60), ...snapshot(row) });
     }
-    return { version: 1, current: snapshot(value.current, fallback.current.layout), activeId: saved.some(v => v.id === value.activeId) ? value.activeId : null, saved };
+    return upgradeEveryday({ version: 1, current: snapshot(value.current, fallback.current.layout), activeId: saved.some(v => v.id === value.activeId) ? value.activeId : null, saved });
   } catch { return fallback; }
 }
 

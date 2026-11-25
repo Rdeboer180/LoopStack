@@ -441,3 +441,6 @@
   color: var(--ink-500);
   font-size: var(--text-small);
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.sampleLink { min-height: var(--tap-target-min); display: inline-flex; align-items: center; }

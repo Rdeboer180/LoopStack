@@ -15,6 +15,8 @@ const review = require('./review.cjs');
 const proposals = require('./proposals.cjs');
 const favorites = require('./favorites.cjs');
 const ai = require('./ai.cjs');
+const buildnotes = require('./buildnotes.cjs');
+const foldersync = require('./foldersync.cjs');
 
 const DEV_URL = process.env.LOOPSTACK_DEV_URL; // e.g. http://localhost:5190
 const isDev = Boolean(DEV_URL);
@@ -87,6 +89,8 @@ app.whenReady().then(() => {
   ai.register();
   review.register();
   proposals.register();
+  buildnotes.register(foldersync.onRecords);
+  foldersync.register();
   // No camera, microphone, location or notifications.
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   // Dev runs use Electron's own bundle, so set the Dock icon here; the packaged

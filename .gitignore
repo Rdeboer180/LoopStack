@@ -12,6 +12,16 @@ dist-ssr
 # committing them would nest the project inside itself.
 .claude/worktrees/
 
+# Hosted dashboard staging (may contain health data) and wrangler state.
+hosting/dashboard/.stage/
+hosting/dashboard/.wrangler/
+
+# Local iOS archives and exports.
+ios/build/
+
+# Private case-study working notes (prompt log). Never committed or published.
+case-study/
+
 # LoopStack desktop: Electron deps, build output and the packaged dmg.
 # dist-web is the static browser demo, rebuilt with `npm run desktop:web`.
 desktop/node_modules/

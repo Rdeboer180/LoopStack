@@ -33,7 +33,7 @@ export function therapyFrom(p: NsProfile | null, now: number): LoopTherapy {
   };
 }
 
-export interface EngineInputs { glucose: GlucoseReading[]; insulin: InsulinEvent[]; carbs: CarbEntry[]; loopIob: { iso: string; iob: number }[] }
+export interface EngineInputs { glucose: GlucoseReading[]; insulin: InsulinEvent[]; carbs: CarbEntry[]; loopIob: { iso: string; iob: number }[]; /** Loop's own carbs on board each cycle (devicestatus), oldest first. */ loopCob: { ms: number; cob: number }[] }
 
 /** Nightscout records as the engine's input types. */
 export function engineInputs(entries: readonly NsEntry[], treatments: readonly NsTreatment[], statuses: readonly NsStatus[]): EngineInputs {
@@ -53,7 +53,12 @@ export function engineInputs(entries: readonly NsEntry[], treatments: readonly N
     }
   }
   const loopIob = statuses.filter((s) => typeof s.iob === 'number').map((s) => ({ iso: s.created_at, iob: s.iob! }));
-  return { glucose, insulin: dedupeInsulinEvents(insulin), carbs: dedupeCarbEntries(carbs), loopIob };
+  const loopCob = statuses
+    .filter((s) => typeof s.cob === 'number' && Number.isFinite(s.cob) && !s.failed)
+    .map((s) => ({ ms: Date.parse(s.loopAt ?? s.created_at), cob: s.cob! }))
+    .filter((x) => Number.isFinite(x.ms))
+    .sort((a, b) => a.ms - b.ms);
+  return { glucose, insulin: dedupeInsulinEvents(insulin), carbs: dedupeCarbEntries(carbs), loopIob, loopCob };
 }
 
 /** Run the Tuning engine over the last three weeks. Null if the engine can't run. */

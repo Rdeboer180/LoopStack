@@ -39,31 +39,23 @@ import {
   metricsRangeWindow,
 } from '@/data/metrics';
 import type { GlucoseMetrics, MetricsRange } from '@/data/types';
-import {
-  classifyGlucose,
-  classifyTrend,
-  glucoseAdvisory,
-  trendArrow,
-  trendLabel,
-} from '@/lib/glucoseStatus';
 import { useRecentGlucose } from '@/data/sources/hooks';
+import { GlanceView, type GlanceKey, type GlanceState } from '@/components/Glance/GlanceView';
+import { buildPhoneGlance } from '@/components/Glance/phoneGlance';
+import { useDataSourceContext } from '@/data/sources/DataSourceContext';
 import styles from './TrendsHome.module.css';
 
-function formatRelativeMin(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.max(0, Math.round(diffMs / 60_000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  return `${Math.round(mins / 60)}h ago`;
-}
-
-const STALE_THRESHOLD_MIN = 15;
-
-function isStale(iso: string | null): boolean {
-  if (!iso) return false;
-  const ageMin = (Date.now() - new Date(iso).getTime()) / 60_000;
-  return ageMin > STALE_THRESHOLD_MIN;
-}
+const GLANCE_SOURCE: Record<string, string> = { mock: 'sample data', healthkit: 'Apple Health', nightscout: 'your Nightscout' };
+/** Where each Glance tile goes on the phone. */
+const GLANCE_OPENS: Record<GlanceKey, string> = {
+  g: 'Insights',
+  t: 'Glucose control, below',
+  a: 'Glucose control, below',
+  i: 'Treatment, below',
+  w: 'Weekday hours',
+  l: 'Weekday hours',
+  d: 'Activity, below',
+};
 
 /**
  * Re-render on a timer so age-of-reading stays true while the screen is open.
@@ -118,6 +110,58 @@ export function TrendsHome() {
 
   const metrics = metricsResult.data?.[range] ?? null;
   const metricsSample = isSample(metricsResult);
+
+  // Glance: the shared top component (src/components/Glance), the same one the
+  // Mac dashboard leads with. It owns the loading, read-again, stale and failed
+  // states; this screen only feeds it and says what each tile opens.
+  const { refresh: refreshSource, activeKind } = useDataSourceContext();
+  const [glanceReading, setGlanceReading] = useState(false);
+  const [glanceError, setGlanceError] = useState<string | null>(null);
+  useClockTick();
+  const readAgain = async () => {
+    setGlanceError(null);
+    setGlanceReading(true);
+    // A read that answers instantly still shows for half a second, so the tap is acknowledged.
+    try { await Promise.all([refreshSource(), new Promise((r) => setTimeout(r, 500))]); } catch (e) { setGlanceError(e instanceof Error ? e.message : String(e)); } finally { setGlanceReading(false); }
+  };
+  const glanceModel = buildPhoneGlance({
+    current: glucoseResult.data ?? null,
+    sourceStale: glucoseResult.isStale,
+    recent: recentGlucoseResult.data ?? [],
+    metrics,
+    closedLoopPct: loopModeResult.data?.closedLoopPct ?? null,
+    rhythm,
+    periodLabel: metricsRangeLabels[range],
+    now: new Date(),
+  });
+  const glanceState: GlanceState = !glanceModel && (metricsResult.loading || glucoseResult.loading)
+    ? 'loading'
+    : glanceReading || (metricsResult.loading && metrics != null) ? 'refreshing' : 'ready';
+  const openFromGlance = (k: GlanceKey) => {
+    if (k === 'w' || k === 'l') { navigate('/app/weekday'); return; }
+    if (k === 'g') { navigate('/app/insights'); return; }
+    setTab(k === 'i' ? 'treatment' : 'overview');
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById('home-tabs')?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  };
+  const glance = (
+    <GlanceView
+      model={glanceModel}
+      state={glanceState}
+      loadingText="Reading your health data: glucose, insulin and activity…"
+      sourceLine={metricsSample ? 'Sample data, made-up numbers' : `From ${GLANCE_SOURCE[activeKind] ?? 'your data'}`}
+      error={glanceError ?? metricsResult.error?.message ?? null}
+      errorTitle="Couldn’t read your data."
+      onRetry={() => { void readAgain(); }}
+      onRefresh={() => { void readAgain(); }}
+      opens={GLANCE_OPENS}
+      onOpen={openFromGlance}
+      empty={{
+        reason: 'Connect Apple Health or Nightscout and your glucose, insulin and activity show here.',
+        action: <button type="button" className="gl-btn" onClick={() => navigate('/app/settings/sources')}>Connect a source</button>,
+      }}
+    />
+  );
   // Two different facts, and the screen was missing both.
   //
   // WHAT A FIGURE MEASURES: the range selector governs some cards and not
@@ -165,7 +209,7 @@ export function TrendsHome() {
         rightAction={<InboxButton />}
       />
         <main className="screen">
-          <GlucoseHero result={glucoseResult} />
+          {glance}
           {/* Staged changes do not depend on metrics, and they are the one
               thing on this screen that is waiting on a decision — dropping
               them while the aggregates compute hid the actionable half of the
@@ -201,13 +245,14 @@ export function TrendsHome() {
         rightAction={<InboxButton />}
       />
       <main className="screen">
-        <GlucoseHero result={glucoseResult} />
+        {glance}
 
         <WaitingOnYou />
 
         {/* Everything above this line is unconditional: what my glucose is
             and what needs a decision. Only the analysis below
             is segmented. */}
+        <div id="home-tabs" />
         <HomeTabs tab={tab} onChange={setTab} />
 
         {/* The old copy — "until Apple Health wiring lands" — described a state
@@ -649,60 +694,6 @@ function WaitingOnYou() {
     </div>
   );
 }
-
-function GlucoseHero({
-  result,
-}: {
-  result: ReturnType<typeof useCurrentGlucose>;
-}) {
-  useClockTick();
-
-  if (!result.data) {
-    return (
-      <section className={`${styles.hero} ${styles.hero_in_range}`}>
-        <div className={styles.heroLabel}>Current glucose</div>
-        <div className={styles.heroValue}>
-          <span className="num">—</span>
-          <span className={styles.heroUnit}>mg/dL</span>
-        </div>
-        <div className={styles.heroTrend}>
-          {result.loading ? 'Connecting to glucose source…' : 'No glucose data yet.'}
-        </div>
-        {result.error ? (
-          <p className={styles.advisory}>
-            {result.error.message ||
-              'Could not reach the configured glucose source.'}
-          </p>
-        ) : null}
-      </section>
-    );
-  }
-
-  const glucose = result.data;
-  const status = classifyGlucose(glucose);
-  const trend = classifyTrend(glucose.ratePer5min);
-  const advisory = glucoseAdvisory(glucose);
-  const stale = result.isStale || isStale(result.lastUpdatedIso);
-
-  return (
-    <section className={`${styles.hero} ${styles[`hero_${status}`]}`}>
-      <div className={styles.heroLabel}>Current glucose</div>
-      <div className={styles.heroValue}>
-        <span className="num">{glucose.mgdl}</span>
-        <span className={styles.heroUnit}>mg/dL</span>
-      </div>
-      <div className={styles.heroTrend}>
-        <span className={styles.trendArrow} aria-hidden>
-          {trendArrow[trend]}
-        </span>
-        {trendLabel[trend]} · {formatRelativeMin(glucose.lastUpdatedIso)}
-        {stale ? <span className={styles.staleTag}>Stale</span> : null}
-      </div>
-      <p className={styles.advisory}>{advisory}</p>
-    </section>
-  );
-}
-
 function SectionSkeleton({ label }: { label: string }) {
   return (
     <section className={styles.skeleton} aria-label={label}>

@@ -1,0 +1,153 @@
+/* Glance: the top component on the phone home and the desktop dashboard, one stylesheet for both. Tokens only (COL-1); data on solid ground (GLASS-1).
+   Motion is the house ease-out, 400ms cubic-bezier(0.2, 0.8, 0, 1). */
+.glance { --gl-ease: cubic-bezier(0.2, 0.8, 0, 1); container-type: inline-size; position: relative; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-6); border-radius: 28px; background: var(--surface-1); border: 1px solid var(--ink-200); overflow: hidden; }
+
+/* Reading: a 2px line along the top edge; values stay, dimmed. */
+.gl-progress { position: absolute; inset: 0 0 auto 0; height: 2px; }
+.gl-progress span { display: block; height: 2px; width: 0; background: var(--range-in); border-radius: 2px; animation: gl-progress 1.6s var(--gl-ease) forwards; }
+@keyframes gl-progress { to { width: 88%; } }
+.glance.dim .gl-tile { opacity: 0.55; }
+
+.gl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.gl-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gl-h { margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-900); }
+.gl-sub { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gl-bell { display: inline-flex; color: var(--accent-info); }
+.gl-bell svg { width: 13px; height: 13px; }
+.gl-again { display: inline-flex; align-items: center; gap: 6px; }
+
+.gl-error { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: 14px; background: var(--surface-0); border: 1px solid var(--range-low); font-size: var(--text-small); color: var(--ink-900); }
+.gl-error .quiet-btn { margin-left: auto; flex: none; }
+
+/* One grid, three widths: 6 columns, then 4, then 2 (the phone's). */
+.gl-grid { display: grid; gap: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(188px, auto); grid-template-areas: "g g t a i i" "g g w w l d"; }
+/* Placement outranks the tile's own reset (`all: unset`). */
+.gl-tile.gl-g { grid-area: g; } .gl-tile.gl-t { grid-area: t; } .gl-tile.gl-a { grid-area: a; } .gl-tile.gl-i { grid-area: i; } .gl-tile.gl-w { grid-area: w; } .gl-tile.gl-l { grid-area: l; } .gl-tile.gl-d { grid-area: d; }
+@container (max-width: 980px) { .gl-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: "g g t a" "g g i i" "w w l d"; } }
+@container (max-width: 560px) { .gl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(160px, auto); grid-template-areas: "g g" "g g" "t a" "i i" "w w" "l d"; } }
+/* On a phone the screen is the frame: no card around the card. */
+@media (max-width: 560px) { .glance { padding: 0 0 var(--space-2); background: transparent; border: 0; border-radius: 0; overflow: visible; } }
+
+/* Tiles are buttons: each opens the detail behind its number. */
+.gl-tile { all: unset; box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 22px; background: var(--surface-0); border: 1px solid transparent; color: var(--ink-900); font: inherit; cursor: pointer; text-align: left;
+  transition: border-color 200ms var(--gl-ease), box-shadow 200ms var(--gl-ease), transform 200ms var(--gl-ease), opacity 300ms ease-out;
+  animation: gl-in 400ms var(--gl-ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.gl-tile:hover { border-color: var(--ink-300); box-shadow: var(--shadow-card, 0 2px 8px rgba(14, 18, 22, 0.06)); }
+.gl-tile:active { transform: scale(0.99); }
+.gl-tile:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+@keyframes gl-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.glance.loading .gl-tile { animation: none; cursor: progress; }
+
+.gl-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; width: 100%; }
+.gl-lab { font-size: 12px; font-weight: 600; color: var(--ink-700); }
+.gl-chip { width: 30px; height: 30px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--brand-on-primary); }
+.c-g, .c-t { background: var(--range-in); } .c-a { background: var(--accent-info); } .c-i { background: var(--graph-insulin); } .c-l { background: var(--range-low); } .c-d { background: var(--graph-activity); } .c-w { background: var(--ink-700); }
+
+.gl-big { margin-top: auto; font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.gl-tile .caption { color: var(--ink-700); }
+
+/* Glucose now */
+.gl-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.gl-now-num { font-size: 72px; line-height: 74px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.gl-arrow { font-size: 30px; font-weight: 500; }
+.gl-now.tone-stale .gl-now-num, .gl-now.tone-stale .gl-arrow { color: var(--ink-500); }
+.gl-age { font-size: 12px; font-weight: 600; padding: 5px 9px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--ink-700); }
+.gl-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.gl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--range-in); }
+.gl-dot.tone-low { background: var(--range-low); } .gl-dot.tone-high { background: var(--range-high); } .gl-dot.tone-stale { background: var(--ink-300); }
+.gl-inset { display: block; margin-top: auto; padding: 12px; border-radius: 16px; background: var(--surface-1); }
+.gl-spark { display: block; width: 100%; height: 100px; }
+.gl-spark.empty { height: 100px; display: flex; align-items: center; justify-content: center; }
+.gl-band { fill: var(--range-in-soft); }
+.gl-line { fill: none; stroke: var(--ink-900); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.gl-line.stale { stroke: var(--ink-500); }
+.gl-pred { fill: none; stroke: var(--ink-700); stroke-width: 2; stroke-dasharray: 5 5; }
+
+/* Time in range */
+.gl-bands { display: flex; gap: 2px; height: 8px; width: 100%; border-radius: var(--radius-pill); overflow: hidden; background: var(--surface-2); }
+.gl-bands span { display: block; height: 100%; transition: width 400ms var(--gl-ease); }
+
+/* Insulin */
+.gl-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 1fr auto; column-gap: 8px; width: 100%; flex-grow: 1; }
+/* Each cell spans the two shared rows (subgrid): every number sits on the same line at the
+   bottom of row one, every label starts on the same line in row two, however a label wraps. */
+.gl-cell { display: grid; grid-row: span 2; grid-template-rows: subgrid; row-gap: 2px; padding: 10px 12px; border-radius: 14px; background: var(--surface-1); }
+.gl-cell > b { align-self: end; }
+.gl-cell > .caption { align-self: start; text-wrap: balance; }
+.gl-cell b { font-size: 24px; line-height: 28px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* In range by day */
+.gl-days { display: grid; grid-template-columns: repeat(var(--n, 8), minmax(0, 1fr)); gap: 6px; width: 100%; flex-grow: 1; }
+.gl-day { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 0; border-radius: 12px; background: var(--surface-1); font-size: 11px; color: var(--ink-700); }
+.gl-day b { font-size: 14px; color: var(--ink-900); font-variant-numeric: tabular-nums; }
+.gl-day.today { background: var(--ink-900); color: var(--surface-0); } .gl-day.today b { color: var(--surface-0); }
+.gl-day.missing { background: transparent; border: 1px dashed var(--ink-300); }
+.gl-daydot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* Devices */
+.gl-devices { margin-top: auto; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.gl-dev { display: flex; flex-direction: column; gap: 5px; }
+.gl-devrow { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.gl-meter { display: block; height: 5px; border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden; }
+.gl-meter span { display: block; height: 100%; background: var(--graph-activity); border-radius: var(--radius-pill); }
+
+/* Skeletons keep each tile's shape, so nothing jumps when the numbers land. */
+.gl-skc { display: flex; flex-direction: column; gap: 8px; flex-grow: 1; width: 100%; }
+.gl-skc.end { justify-content: flex-end; }
+.gl-sk { display: block; position: relative; overflow: hidden; border-radius: 8px; background: var(--surface-2); }
+.gl-sk::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-0) 70%, transparent), transparent); animation: gl-shimmer 1.4s ease-in-out infinite; }
+@keyframes gl-shimmer { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gl-tile, .gl-bands span, .gl-progress span { animation: none; transition: none; }
+  .gl-progress span { width: 88%; }
+  .gl-sk::after { display: none; }
+}
+
+/* Shared pieces, so the phone (no desktop kit) and the Mac draw the same. */
+.glance .caption { font-size: 12px; line-height: 16px; color: var(--ink-700); }
+.glance .strong { font-weight: 600; color: var(--ink-900); }
+.gl-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.gl-btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 8px 14px; border-radius: var(--radius-pill); border: 1px solid var(--ink-300); background: var(--surface-0); color: var(--ink-900); font-size: 13px; font-weight: 600; transition: border-color 200ms var(--gl-ease); }
+.gl-btn:hover { border-color: var(--ink-700); }
+.gl-btn:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+.gl-btn:disabled { cursor: progress; opacity: 0.6; }
+.gl-tile.gl-skeleton { cursor: default; animation: none; }
+/* A changed number flashes once when a read lands (the number, not the tile). */
+.gl-flash { border-radius: 8px; animation: gl-flash 1.2s ease-out; }
+@keyframes gl-flash { from { background: color-mix(in srgb, var(--range-in) 38%, transparent); } to { background: transparent; } }
+.gl-empty { gap: var(--space-2); }
+/* Touch: no hover state to get stuck on. */
+@media (hover: none) { .gl-tile:hover { border-color: transparent; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .gl-flash { animation: none; } }
+
+/* Today with no readings yet stays legible: dashed, ink text, not white on nothing. */
+.gl-day.today.missing { background: transparent; color: var(--ink-700); }
+.gl-day.today.missing b { color: var(--ink-700); }
+/* Narrow tiles: the three insulin cells keep their numbers on one line. */
+@container (max-width: 560px) { .gl-cell { padding: 8px 10px; } .gl-cell b { font-size: 19px; line-height: 24px; white-space: nowrap; } .gl-devrow { flex-wrap: wrap; } .gl-now-num { font-size: 64px; line-height: 66px; } }
+
+/* In range by day: one ring per day, the phone's "Last 7 days" treatment (design pass, Nov 23).
+   Number inside, colour from the percent, today's track dashed because the day is partial. */
+.gl-weeknote { font-size: 13px; font-weight: 600; color: var(--ink-900); }
+.gl-rings { display: grid; grid-template-columns: repeat(var(--n, 8), minmax(0, 1fr)); gap: 4px; width: 100%; margin-top: auto; }
+.gl-ring { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.gl-ring svg { width: 100%; max-width: 46px; aspect-ratio: 1; display: block; }
+.gl-ring-track { fill: none; stroke: var(--ink-200); stroke-width: 3.5; }
+.gl-ring.today .gl-ring-track { stroke-dasharray: 2.5 2.5; stroke: var(--ink-300); }
+.gl-ring.missing .gl-ring-track { stroke-dasharray: 1.5 3; stroke: var(--ink-300); }
+.gl-ring-arc { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: var(--len) calc(var(--c) - var(--len) + 1);
+  animation: gl-ring-in 400ms var(--gl-ease) both; animation-delay: calc(120ms + var(--i, 0) * 30ms); }
+@keyframes gl-ring-in { from { stroke-dasharray: 0 var(--c); } }
+.gl-ring-num { font-size: 10px; font-weight: 600; fill: var(--ink-900); font-variant-numeric: tabular-nums; font-family: inherit; }
+.gl-ring.missing .gl-ring-num { fill: var(--ink-500); }
+.gl-ring-label { font-size: 11px; color: var(--ink-700); }
+.gl-ring.today .gl-ring-label { font-weight: 600; color: var(--ink-900); }
+
+/* Low trend: one bar per stretch of the period, height = share of readings below your low. */
+.gl-lowbars { display: flex; align-items: flex-end; gap: 3px; height: 28px; width: 100%; }
+.gl-lowbars span { flex: 1; min-height: 3px; border-radius: 2px; background: var(--range-low); opacity: 0.85; }
+.gl-lowbars span.none { height: 3px; background: var(--ink-200); opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .gl-ring-arc { animation: none; } }
+/* Phone: Glance buttons meet the 44pt target. */
+@media (max-width: 560px) { .gl-btn { min-height: var(--tap-target-min, 44px); } }

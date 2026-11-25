@@ -52,19 +52,35 @@ function errorText(err) {
   if (err instanceof Anthropic.AuthenticationError) return 'Anthropic didn’t accept the API key.';
   if (err instanceof Anthropic.PermissionDeniedError) return 'This API key isn’t allowed to use that model.';
   if (err instanceof Anthropic.RateLimitError) return 'Anthropic is rate-limiting this key. Try again in a minute.';
-  if (err instanceof Anthropic.BadRequestError) return `Anthropic couldn’t take that request: ${err.message}`;
+  if (err instanceof Anthropic.BadRequestError) return 'Anthropic couldn’t take that request. Try a shorter request.';
   if (err instanceof Anthropic.APIConnectionError) return 'Couldn’t reach Anthropic. Check the connection.';
   if (err instanceof Anthropic.APIError) return `Anthropic answered ${err.status}.`;
-  return String(err?.message || err);
+  return 'The AI request failed. Try again.';
 }
 
 /** Stop reasons that mean the answer can't be used as is. */
-function unusable(msg) {
+function unusable(msg, maxText = Infinity) {
+  if (!msg || !Array.isArray(msg.content)) return 'Claude returned an unreadable answer. Try again.';
   if (msg.stop_reason === 'refusal') return 'Claude declined this request.';
   if (msg.stop_reason === 'max_tokens') return 'The answer ran past its length limit. Try a narrower request.';
+  if (msg.stop_reason !== 'end_turn') return 'Claude did not finish this answer. Try again.';
+  const text = textOf(msg).trim();
+  if (!text) return 'Claude returned no text. Try again.';
+  if (text.length > maxText) return 'The answer is too long for this chat. Try a narrower question.';
   return null;
 }
-const textOf = (msg) => msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+const textOf = (msg) => msg.content.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('');
+
+function contextJSON(value, limit) {
+  try {
+    const text = JSON.stringify(value ?? {});
+    if (typeof text !== 'string') return { error: 'The context couldn’t be read. Start a new request.' };
+    if (Buffer.byteLength(text, 'utf8') > limit) return { error: 'The context is too large to send.' };
+    return { text };
+  } catch {
+    return { error: 'The context couldn’t be read. Start a new request.' };
+  }
+}
 
 // ------------------------------------------------------------ ask
 
@@ -216,9 +232,9 @@ function register() {
     const key = readKey();
     if (!key) return { ok: false, error: 'Add your Anthropic API key in Settings first.' };
     const question = String(input?.question || '').trim();
-    const summary = JSON.stringify(input?.summary ?? {});
+    const summary = contextJSON(input?.summary, 60_000);
+    if (summary.error) return { ok: false, error: summary.error };
     if (!question || question.length > 2000) return { ok: false, error: 'Ask a question of up to 2,000 characters.' };
-    if (summary.length > 60_000) return { ok: false, error: 'The data summary is too large to send.' };
     try {
       const stream = client(key).beta.messages.stream({
         model: MODEL,
@@ -227,7 +243,7 @@ function register() {
         output_config: { effort: 'medium' },
         system: ASK_SYSTEM,
         messages: [{ role: 'user', content: [
-          { type: 'text', text: `My LoopStack data summary:\n${summary}`, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: `My LoopStack data summary:\n${summary.text}`, cache_control: { type: 'ephemeral' } },
           { type: 'text', text: question },
         ] }],
       });
@@ -245,12 +261,12 @@ function register() {
     if (!key) return { ok: false, error: 'Add your Anthropic API key in Settings first.' };
     const chat = chatMessages(input?.messages);
     if (chat.error) return { ok: false, error: chat.error };
-    const context = JSON.stringify(input?.context ?? {});
-    if (context.length > 80_000) return { ok: false, error: 'The context is too large to send.' };
+    const context = contextJSON(input?.context, 80_000);
+    if (context.error) return { ok: false, error: context.error };
     // The context rides in front of the first message, cached, so later turns re-send it cheaply.
     const [first, ...rest] = chat.messages;
     const messages = [{ role: 'user', content: [
-      { type: 'text', text: `My LoopStack context:\n${context}`, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `My LoopStack context:\n${context.text}`, cache_control: { type: 'ephemeral' } },
       { type: 'text', text: first.content },
     ] }, ...rest];
     try {
@@ -262,7 +278,7 @@ function register() {
         system: CHAT_SYSTEM,
         messages,
       }).finalMessage();
-      const bad = unusable(msg);
+      const bad = unusable(msg, CHAT_TEXT);
       if (bad) return { ok: false, error: bad };
       return { ok: true, answer: textOf(msg), model: msg.model };
     } catch (err) {
@@ -369,4 +385,4 @@ function register() {
   });
 }
 
-module.exports = { register, DOSING_PATH, REFUSED_PATH, ASK_SYSTEM, CHAT_SYSTEM, chatMessages };
+module.exports = { unusable, contextJSON, errorText, register, DOSING_PATH, REFUSED_PATH, ASK_SYSTEM, CHAT_SYSTEM, chatMessages };

@@ -269,3 +269,6 @@
   color: var(--ink-500);
   margin: 0;
 }
+
+/* Tap targets at least 44pt (UX sweep, Nov 23). */
+.primaryBtn { min-height: var(--tap-target-min); }

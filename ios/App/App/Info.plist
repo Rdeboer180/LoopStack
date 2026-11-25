@@ -49,9 +49,9 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSHealthShareUsageDescription</key>
-	<string>LoopStack reads your blood glucose, insulin delivery, dietary carbs, and workout history from Apple Health to model meal absorption and suggest better insulin strategies. Data stays on your device.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>LoopStack does not write data back to Apple Health by default. This permission is requested only if you choose to log meals or strategies from inside the app.</string>
+	<string>LoopStack does not save anything to Apple Health. This permission is listed only because the Health framework it uses requires it.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>LoopStack reads your glucose, insulin delivery, carbs, workouts, heart rate, steps and sleep from Apple Health to show your patterns and how meals and activity line up. It never writes to Health, and your data stays on this iPhone.</string>
 </dict>
 </plist>

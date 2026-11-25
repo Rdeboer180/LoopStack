@@ -33,7 +33,9 @@ export function ProfileBar({ clinician, go }: { clinician: boolean; go: Go }) {
     if (!open) return undefined;
     menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpen(false); trigger.current?.focus(); }
+      if (e.key === 'Tab') { setOpen(false); return; }
+      if (!wrap.current?.contains(e.target as Node)) return;
+      if (e.key === 'Escape') { e.preventDefault(); setOpen(false); trigger.current?.focus(); }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const items = [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
         const i = items.indexOf(document.activeElement as HTMLElement);
@@ -64,13 +66,12 @@ export function ProfileBar({ clinician, go }: { clinician: boolean; go: Go }) {
           className="profile-btn"
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-controls="profile-menu"
+          aria-controls={open ? 'profile-menu' : undefined}
           aria-label={`${name}, ${sub}${clinician ? '' : `, looped ${looped} minutes ago`}. Account menu`}
           onClick={() => setOpen((o) => !o)}
         >
           <span className="profile-avatar" style={{ boxShadow: clinician ? undefined : `0 0 0 2px var(--surface-0), 0 0 0 4px ${ringColour(looped)}` }} aria-hidden="true">{initials}</span>
           <span className="profile-name">{name}</span>
-          <span className="profile-sub" aria-hidden="true">· {sub}</span>
           <svg className="profile-chev" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
         <button type="button" className="icon-btn profile-gear" aria-label="Settings" title="Settings" onClick={() => go({ view: 'settings' })}>

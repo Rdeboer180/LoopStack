@@ -1,6 +1,7 @@
-// Glucose over the day, with the person's 70–180 mg/dL band always drawn (DM-2).
+// Glucose over the day, with the person's own in-range band always drawn (DM-2; Settings → Your ranges).
 // Solid ground: the chart itself is never glass (GLASS-1).
 import type { Pt } from '../data/current';
+import { BANDS } from '../data/ranges';
 import { hourTick } from '../data/derive';
 
 export interface Series {
@@ -33,7 +34,7 @@ export function scales({ W, H, x0, x1, ymin = 40, ymax = 300 }: ChartGeom) {
   };
 }
 
-export function GlucoseChart({ geom, series, band = [70, 180], scope, label }: {
+export function GlucoseChart({ geom, series, band = [BANDS.low, BANDS.high], scope, label }: {
   geom: ChartGeom;
   series: Series[];
   band?: [number, number];

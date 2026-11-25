@@ -8,10 +8,15 @@
  * 13 usable. Loop 3.6 · Omnipod DASH · Dexcom G7.
  */
 
+import { computeDayHourGrid } from '@/lib/metrics/dayHourGrid';
 import type { Suggestion } from './suggestions';
+import { observedAbsorption } from './carbAbsorbed';
+import { realLoopTherapy } from '@/data/loopTherapy';
 import type { Dataset, Day, HourState, ListedPatient, Pt, SettingsChange } from './dataset';
 import { mealResponses, type MealInputs } from './meals';
 import { summariseDay } from './daily';
+import { BANDS, bandRead } from './ranges';
+import { computeHypoReport } from '@/lib/metrics/hypoEvents';
 
 export const DAYS = [
   'Fri 30', 'Sat 31', 'Sun 1', 'Mon 2', 'Tue 3', 'Wed 4', 'Thu 5', 'Fri 6',
@@ -105,7 +110,33 @@ export const CGM_NOW = {
   activeCarbsG: 22,
   points: [[6.0, 128], [6.5, 134], [7.0, 141], [7.5, 150], [8.0, 146], [8.5, 131], [9.0, 118], [9.25, 112]] as Pt[],
   prediction: [[9.25, 112], [9.75, 108], [10.25, 107], [10.75, 109]] as Pt[],
+  day: sampleDay(),
 } as const;
+
+/**
+ * The sample's last 24 hours of 5-minute readings, for the 3/6/12/24h view: yesterday evening's
+ * dinner rise, a dip under 65 around 2:30am, a dawn climb, then this morning's readings above.
+ * Deterministic, so the demo and the tests always draw the same day.
+ */
+function sampleDay(): Pt[] {
+  const morning: Pt[] = [[6.0, 128], [6.5, 134], [7.0, 141], [7.5, 150], [8.0, 146], [8.5, 131], [9.0, 118], [9.25, 112]];
+  const bump = (h: number, at: number, height: number, width: number) => height * Math.exp(-(((h - at) / width) ** 2));
+  const out: Pt[] = [];
+  for (let i = 0; i <= 24 * 12; i++) {
+    const h = Math.round((9.25 - 24 + i / 12) * 100) / 100;
+    let v: number;
+    if (h >= 6) {
+      const k = morning.findIndex((p) => p[0] >= h);
+      const [a, b] = k <= 0 ? [morning[0], morning[0]] : [morning[k - 1], morning[k]];
+      v = b[0] === a[0] ? a[1] : a[1] + ((h - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+    } else {
+      v = 118 + bump(h, -4.8, 92, 1.1) + bump(h, -8.5, 38, 0.9) - bump(h, 2.5, 56, 0.8) + bump(h, 5, 14, 1.2);
+      v += Math.sin(i * 1.7) * 3 + Math.sin(i * 0.37) * 4;
+    }
+    out.push([h, Math.round(v)]);
+  }
+  return out;
+}
 
 export const HEADS_UP = {
   when: 'today 1:00pm',
@@ -151,12 +182,16 @@ export const READ = {
   highPct: 19.9,
   veryHighPct: 4.0,
   inRangeSinceLastVisit: 3,
+  /** The 14 days before, made up like the rest. */
+  prev: { inRangePct: 70.2, meanMgdl: 153, gmiPct: 6.9, cvPct: 36 },
   automationPct: 94,
   automationGaps: 'lost pod connection 6 h, CGM warm-up 2 h',
   gmiPct: 6.8,
   cvPct: 34,
   meanMgdl: 148,
-} as const;
+  /** Against your own bands, from the same made-up readings the daily rings draw. */
+  get mine() { return bandRead(samPool()); },
+};
 
 /** AGP percentile curves, mg/dL every 2 hours, from the boards (Concept 07). */
 export const AGP = {
@@ -348,18 +383,25 @@ function samEveryDay(): Dataset['DAY'] {
 // ------------------------------------------------------------ daily glucose (synthetic)
 
 /** Made-up readings for each day: a daily curve around a day's own average, so the tile has spread to draw. */
+const SAM_MEANS: Record<string, number> = {
+  'Fri 30': 141, 'Sat 31': 152, 'Sun 1': 160, 'Mon 2': 146, 'Tue 3': 139, 'Wed 4': 158, 'Thu 5': 144,
+  'Fri 6': 138, 'Sat 7': 163, 'Mon 9': 147, 'Tue 10': 150, 'Wed 11': 142, 'Thu 12': 145,
+};
+// A day's made-up readings: a daily curve around its own average, with an early-morning dip so the low bands have something in them.
+const samReadings = (mean: number, seed: number, n = 288) => Array.from({ length: n }, (_, k) => {
+  const h = (k / 288) * 24;
+  const meal = Math.max(0, Math.sin(((h - 12.5) / 3) * Math.PI)) * 55 + Math.max(0, Math.sin(((h - 19) / 3) * Math.PI)) * 45;
+  const dip = Math.max(0, Math.sin(((h - 3) / 2) * Math.PI)) * (seed % 3 === 0 ? 70 : 40);
+  const wave = Math.sin((k + seed * 7) / 9) * 9;
+  return Math.round(mean - 22 + meal - dip + wave);
+});
+let pool: number[] | null = null;
+const samPool = () => (pool ??= DAYS.flatMap((d, i) => (d === NOT_COUNTED ? [] : samReadings(SAM_MEANS[d], i))));
+
 function samDaily(): Dataset['DAILY'] {
-  const means: Record<string, number> = {
-    'Fri 30': 141, 'Sat 31': 152, 'Sun 1': 160, 'Mon 2': 146, 'Tue 3': 139, 'Wed 4': 158, 'Thu 5': 144,
-    'Fri 6': 138, 'Sat 7': 163, 'Mon 9': 147, 'Tue 10': 150, 'Wed 11': 142, 'Thu 12': 145,
-  };
+  const means = SAM_MEANS;
   const months = ['Oct', 'Oct', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov', 'Nov'];
-  const readings = (mean: number, seed: number, n = 288) => Array.from({ length: n }, (_, k) => {
-    const h = (k / 288) * 24;
-    const meal = Math.max(0, Math.sin(((h - 12.5) / 3) * Math.PI)) * 55 + Math.max(0, Math.sin(((h - 19) / 3) * Math.PI)) * 45;
-    const wave = Math.sin((k + seed * 7) / 9) * 9;
-    return Math.round(mean - 22 + meal + wave);
-  });
+  const readings = samReadings;
   return {
     days: DAYS.map((d, i) => (d === NOT_COUNTED
       ? summariseDay(d, `${d.split(' ')[0]}, ${months[i]} ${d.split(' ')[1]}`, [], false)
@@ -368,9 +410,43 @@ function samDaily(): Dataset['DAILY'] {
   };
 }
 
+/** Four sample weeks for exploring the Friday heads-up. Use the same evidence
+ * calculation as Nightscout and retain the Sunday sensor gap in this fixture. */
+function sampleWeekdayGrid() {
+  const now = new Date(2026, 10, 13);
+  const glucose = [];
+  for (let day = 0; day < 28; day++) {
+    const date = new Date(2026, 9, 16 + day);
+    if (date.getMonth() === 10 && date.getDate() === 8) continue;
+    for (let hour = 0; hour < 24; hour++) {
+      for (let i = 0; i < 12; i++) {
+        const iso = new Date(2026, 9, 16 + day, hour, i * 5).toISOString();
+        const friday = date.getDay() === 5 && hour >= 15 && hour < 18;
+        const lowCount = hour === 15 ? 7 : hour === 16 ? 6 : 4 + Number(day === 21);
+        const mgdl = friday ? (i < lowCount ? 62 + i : 77 + i) :
+          Math.round(130 + 28 * Math.sin((hour - 8) / 3) + 7 * Math.cos(i + day));
+        glucose.push({ iso, mgdl });
+      }
+    }
+  }
+  return computeDayHourGrid({ glucose, now, target: { lowMgdl: BANDS.low, highMgdl: BANDS.high }, weeks: 12, includeSamples: true });
+}
+
 // ------------------------------------------------------------ the dataset
 
-const SAM_MEALS = mealResponses(samMeals(), new Date(2026, 9, 14).getTime(), new Date(2026, 10, 13).getTime());
+const SAM_MEALS = (() => {
+  const raw = samMeals();
+  const end = new Date(2026, 10, 13).getTime();
+  // The sample patient's observed absorption, counted the way Loop does (carbAbsorbed.ts), against the phone app's sample therapy.
+  const absorbed = observedAbsorption({
+    glucose: raw.glucose.map((g) => ({ iso: new Date(g.at).toISOString(), mgdl: g.mgdl })),
+    carbs: raw.carbs.map((c) => ({ iso: new Date(c.at).toISOString(), grams: c.grams, absorptionHours: (c.absorptionMin ?? 180) / 60, label: c.name ?? undefined })),
+    insulin: raw.boluses.map((b) => ({ iso: new Date(b.at).toISOString(), units: b.units, kind: 'bolus' as const })),
+    therapy: realLoopTherapy,
+    end,
+  });
+  return mealResponses({ ...raw, absorbed }, new Date(2026, 9, 14).getTime(), end);
+})();
 
 /** A fixed sample, written by hand so the demo shows every grade (the synthetic glucose doesn't respond to insulin). */
 function samSuggestions(): Suggestion[] {
@@ -410,6 +486,7 @@ export const SYNTHETIC: Dataset = {
   PATIENT: { ...PATIENT, first: 'Sam' },
   CGM_NOW,
   HEADS_UP: { ...HEADS_UP, kind: 'low', weekday: 5, stretch: [15, 18] },
+  WEEKDAY_GRID: sampleWeekdayGrid(),
   AVG_DAY: AVG_FRIDAY,
   CARE_NOTE,
   LUNCH: { ...LUNCH, beforeLabel: 'Before, 1:10', afterLabel: 'After, 1:9' },
@@ -437,4 +514,6 @@ export const SYNTHETIC: Dataset = {
   DAILY: samDaily(),
   MEALS: SAM_MEALS,
   SUGGESTIONS: samSuggestions(),
+  THERAPY: { ...realLoopTherapy, from: 'sample' },
+  LOWS: computeHypoReport({ glucose: samMeals().glucose.map((g) => ({ iso: new Date(g.at).toISOString(), mgdl: g.mgdl })), target: { lowMgdl: BANDS.low, highMgdl: BANDS.high, urgentLowMgdl: BANDS.urgentLow }, now: new Date(2026, 10, 13), windowDays: 14 }),
 };

@@ -1,13 +1,13 @@
 # Loop settings (schedule-based therapy)
 
-`src/data/loopTherapy.ts` holds a sample schedule-based therapy profile (made-up
-values, not a recommendation). `Insights → Settings` renders them read-only.
+`src/data/loopTherapy.ts` holds Ryan's real Loop therapy settings, transcribed
+from the Loop app. `Insights → Settings` renders them read-only.
 
 ## Why schedule-based matters
 
-Loop's carb ratio, ISF, and basal all **change by time of day**. A single flat
-value can be far from the one that applies at a given hour, so any reading is
-measured against the value active at that time. A dose is only correct if it uses the value
+Loop's carb ratio, ISF, and basal all **change by time of day**. The sample
+profile shipped a single carb ratio of 10 g/U; Ryan's real ratio is 25.5–28.5.
+The old default over-dosed by ~2.8×. A dose is only correct if it uses the value
 active at the moment the meal is eaten — so the resolvers take a `Date`.
 
 ## Resolution priority (used by the dose engine)

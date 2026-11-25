@@ -102,6 +102,19 @@ copy of the other.
   The two non-negotiable tiles (PROD-2) can move and resize but not leave.
 - **LAYOUT-3 The review is fixed.** The care-team review has one layout and one
   order for every patient (PROD-1, VIS-10).
+- **LAYOUT-4 Tile anatomy.** A desktop tile is a 44px header (title, at most one
+  control, Details), a body that leads with one figure or chart and one caption,
+  and at most one line of action below. A tile never hides content by cutting it:
+  its minimum size fits its glance, it shows fewer items with "Show more" when
+  short, and anything left scrolls inside the body. Sample data is marked once,
+  in the top bar, not on each tile.
+- **LAYOUT-5 One in-tile choice control.** Sort, range and mode choices in a tile
+  use `TileSelect` (a pill that opens a menu). Menus draw in a layer above the
+  page so no tile or panel clips them. Native selects and segmented controls
+  stay out of tile headers; a weekday picker uses Sun, Mon, Tue, never letters.
+- **LAYOUT-6 One primary per screen.** Each screen has one green action. Per-row
+  actions are quiet, and a choice that isn't available says why in words rather
+  than showing a greyed-out button.
 
 ## Components
 

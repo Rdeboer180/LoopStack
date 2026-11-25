@@ -41,7 +41,7 @@ export function dataSummary() {
     dayTracker: { weekday: DAY.name, weeks: DAY.weeks, medianGlucoseByHour: DAY.glucose, activeInsulinByHour: DAY.iob, activeCarbsByHour: DAY.cob, exerciseMinutesByHour: DAY.exercise },
     settingsChanges: CHANGES.map((c) => ({ date: c.date, setting: c.setting, from: c.from, to: c.to, status: c.status })),
     lunchBeforeAfter: { comparing: LUNCH.change, before: LUNCH.before, after: LUNCH.after },
-    meals: MEALS.groups.map((g) => ({ meal: g.name, times: g.n, medianCarbsG: g.medianCarbsG, medianRiseMgdl: g.medianRiseMgdl, medianPeakAfterMin: g.medianPeakAfterMin, medianEnteredAbsorptionMin: g.medianEnteredMin, medianObservedMin: g.medianObservedMin })),
+    meals: MEALS.groups.map((g) => ({ meal: g.name, times: g.n, medianCarbsG: g.medianCarbsG, medianRiseMgdl: g.medianRiseMgdl, medianPeakAfterMin: g.medianPeakAfterMin, medianEnteredAbsorptionMin: g.medianEnteredMin, medianObservedAbsorptionMin: g.medianObservedMin, medianMinutesBackNearStart: g.medianBackMin })),
     findings: { ...TEXT },
   };
 }
@@ -60,7 +60,7 @@ export function repoSummary(build: LoopBuildStatus | null, commits: Commit[]) {
     latestBuildRun: run(build.latestRun),
     lastSuccessfulBuild: run(build.lastBuild),
     testflightExpiresAt: build.testflightExpiresAt,
-    recentCommits: commits,
+    recentCommits: commits.map((c) => ({ date: c.date, message: c.message.split(/\r?\n/, 1)[0] })),
   };
 }
 

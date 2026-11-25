@@ -19,6 +19,8 @@ export const MAX_H = 4;
 export type TileKind =
   | 'glucose-now'
   | 'heads-ups'
+  | 'hour-evidence'
+  | 'review-queue'
   | 'day-tracker'
   | 'what-loop-did'
   | 'before-after'
@@ -26,7 +28,9 @@ export type TileKind =
   | 'device-life'
   | 'care-thread'
   | 'meals'
-  | 'daily-glucose';
+  | 'daily-glucose'
+  | 'hour-by-hour'
+  | 'key-numbers';
 
 export interface TileSpec {
   kind: TileKind;
@@ -42,15 +46,19 @@ export interface TileSpec {
 }
 
 export const TILES: Record<TileKind, TileSpec> = {
+  'hour-evidence': { kind: 'hour-evidence', title: 'Weekday by hour', blurb: 'Inspect glucose readings and dates behind each hour', w: 8, h: 3, minW: 6, minH: 3 },
+  'review-queue': { kind: 'review-queue', title: 'Your review queue', blurb: 'Open observations, meal comparisons and staged drafts', w: 4, h: 3, minW: 4, minH: 3 },
   'glucose-now': { kind: 'glucose-now', title: 'Glucose now', blurb: 'CGM reading, trend, Loop status, active insulin and carbs', w: 4, h: 2, minW: 4, minH: 2 },
-  'heads-ups': { kind: 'heads-ups', title: 'Daily trend heads-ups', blurb: 'Weekday stretches that often run low or high', w: 4, h: 2, minW: 4, minH: 1, pinned: true },
+  'heads-ups': { kind: 'heads-ups', title: 'Daily trend heads-ups', blurb: 'Weekday stretches that often run low or high', w: 4, h: 2, minW: 4, minH: 2, pinned: true },
   'day-tracker': { kind: 'day-tracker', title: 'Day tracker', blurb: 'Glucose, insulin, carbs and exercise by hour for a weekday', w: 8, h: 3, minW: 6, minH: 2, pinned: true },
   'what-loop-did': { kind: 'what-loop-did', title: 'What Loop did', blurb: 'Delivered against scheduled, 14 days by 24 hours', w: 8, h: 3, minW: 6, minH: 2 },
   'before-after': { kind: 'before-after', title: 'Before and after', blurb: 'Lunch, before and after your latest settings change', w: 6, h: 2, minW: 4, minH: 2 },
-  'time-in-range': { kind: 'time-in-range', title: 'Time in range', blurb: 'Five bands, 14 days', w: 4, h: 2, minW: 4, minH: 1 },
+  'time-in-range': { kind: 'time-in-range', title: 'Time in range', blurb: 'Five bands, 14 days', w: 4, h: 2, minW: 4, minH: 2 },
   'device-life': { kind: 'device-life', title: 'Device life', blurb: 'Pod age, sensor day, Loop build expiry', w: 4, h: 1, minW: 4, minH: 1 },
   'care-thread': { kind: 'care-thread', title: 'Care-team thread', blurb: 'Messages with your care team', w: 4, h: 2, minW: 4, minH: 2 },
   meals: { kind: 'meals', title: 'Favorite foods', blurb: 'Every time you had each favorite: how it went, absorption entered against observed', w: 8, h: 3, minW: 6, minH: 2 },
+  'hour-by-hour': { kind: 'hour-by-hour', title: 'Hour by hour', blurb: 'Each hour of the day across the period: median, and how often it ran low or high', w: 8, h: 2, minW: 6, minH: 2 },
+  'key-numbers': { kind: 'key-numbers', title: 'Key numbers', blurb: 'Average glucose, GMI and variability for the period', w: 4, h: 2, minW: 4, minH: 2 },
   'daily-glucose': { kind: 'daily-glucose', title: 'Daily glucose', blurb: 'Your average glucose each day, with its spread, and today so far', w: 8, h: 2, minW: 4, minH: 2 },
 };
 
@@ -79,12 +87,14 @@ export const PRESETS: Record<PresetId, { name: string; blurb: string; tiles: [Ti
     name: 'Everyday',
     blurb: 'Glucose now first, then today’s heads-ups and your weekday',
     tiles: [
-      ['glucose-now', 4, 2],
-      ['heads-ups', 4, 2],
-      ['time-in-range', 4, 2],
+      ['glucose-now', 6, 2],
+      ['heads-ups', 6, 2],
+      ['hour-evidence', 8, 3],
+      ['review-queue', 4, 3],
       ['day-tracker', 8, 3],
       ['device-life', 4, 1],
       ['care-thread', 4, 2],
+      ['time-in-range', 4, 3],
       ['meals', 8, 3],
       ['what-loop-did', 12, 3],
     ],

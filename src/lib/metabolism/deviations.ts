@@ -174,10 +174,22 @@ export function computeDeviations(input: {
     .filter((g) => Number.isFinite(ms(g.iso)) && g.mgdl > 0)
     .sort((a, b) => ms(a.iso) - ms(b.iso));
 
-  const carbTimes = carbs
-    .map((c) => ms(c.iso))
-    .filter((t) => Number.isFinite(t))
-    .sort((a, b) => a - b);
+  // Carbs in time order with their times parsed once. Each step only looks at the
+  // entries that can still matter (a sliding window), so months of history stay fast;
+  // the result is the same as scanning every entry.
+  const carbsByTime = carbs
+    .map((c) => ({ c, t: ms(c.iso) }))
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => a.t - b.t);
+  const lookbackMs =
+    Math.max(
+      UAM_SHADOW_MINUTES,
+      CARB_BLACKOUT_MINUTES,
+      ...carbsByTime.map((x) => Math.max(x.c.absorptionHours ?? 3, 1) * 60),
+      0,
+    ) * 60_000;
+  let winLo = 0;
+  let winHi = 0;
 
   const steps: DeviationStep[] = [];
   let uamUntilMs = 0;
@@ -206,14 +218,17 @@ export function computeDeviations(input: {
     const bgDelta = rawDelta * scale;
     const deviation = bgDelta - bgi * scale;
 
-    const cob = carbsOnBoardAt(atMs, carbs, csf);
+    while (winHi < carbsByTime.length && carbsByTime[winHi].t <= atMs) winHi += 1;
+    while (winLo < winHi && carbsByTime[winLo].t < atMs - lookbackMs) winLo += 1;
+    const near = carbsByTime.slice(winLo, winHi);
+    const cob = carbsOnBoardAt(atMs, near.map((x) => x.c), csf);
 
     // Unannounced meals: a sustained rise with no carbs on board and none
     // logged recently. Left in the basal bucket these read as chronic
     // under-basal, which is the single most common way retrospective tuning
     // goes wrong.
-    const recentCarb = carbTimes.some(
-      (t) => atMs - t >= 0 && atMs - t <= UAM_SHADOW_MINUTES * 60_000,
+    const recentCarb = near.some(
+      ({ t }) => atMs - t >= 0 && atMs - t <= UAM_SHADOW_MINUTES * 60_000,
     );
     if (cob <= 0 && !recentCarb && deviation >= UAM_RISE_MGDL) {
       consecutiveRises += 1;
@@ -224,8 +239,8 @@ export function computeDeviations(input: {
       consecutiveRises = 0;
     }
 
-    const inBlackout = carbTimes.some(
-      (t) => atMs - t >= 0 && atMs - t <= CARB_BLACKOUT_MINUTES * 60_000,
+    const inBlackout = near.some(
+      ({ t }) => atMs - t >= 0 && atMs - t <= CARB_BLACKOUT_MINUTES * 60_000,
     );
 
     // Carbs on board wins over the blackout, and the order matters a great

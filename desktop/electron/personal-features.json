@@ -1,5 +1,5 @@
 {
-  "_note": "The person's own patches in their LoopWorkspace patches/ folder, by file name without its number (\"08-meal-patterns-and-tools.patch\" is meal-patterns-and-tools). rank orders the cards (lowest first); the build still applies files in file-name order. dosing: LoopStack's reading of whether it changes what Loop doses or is told (PRODUCT.md SAFE-3). canTurnOn:false is never turned on by LoopStack (SAFE-6: it removes a safety check). A file not listed here is named from its file name and treated as dosing. Shared by the main process (personal.cjs) and the page (loopCustomizations.ts).",
+  "_note": "The person's own patches in their LoopWorkspace patches/ folder, by file name without its number (\"08-meal-patterns-and-tools.patch\" is meal-patterns-and-tools). Read from Rdeboer180/LoopWorkspace @ Rdeboer180-patch-AT on 2026-11-14. rank orders the cards (lowest first); the build still applies files in file-name order. dosing: LoopStack's reading of whether it changes what Loop doses or is told (PRODUCT.md SAFE-3). canTurnOn:false is never turned on by LoopStack (SAFE-6: it removes a safety check). A file not listed here is named from its file name and treated as dosing. Shared by the main process (personal.cjs) and the page (loopCustomizations.ts).",
   "items": [
     {
       "id": "meal-patterns-and-tools",

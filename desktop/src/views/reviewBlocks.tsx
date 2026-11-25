@@ -14,6 +14,8 @@ import { Fit, IChevron, useAnnounce } from '../ui/kit';
 import { splitAtVisit, useCareNotes, useLastVisit, type CareNote } from '../data/careContact';
 import { openCareNotes } from '../data/intent';
 import type { DailyGlucose } from '../data/dataset';
+import { STANDARD } from '../data/ranges';
+import { YourLoopSettings } from './YourProfile';
 
 export interface BlockProps { route: Route; go: Go; terms?: Terms; numbered?: boolean; onEvidence?: (section: string) => void }
 
@@ -29,6 +31,7 @@ export function ReviewBlock({ id, ...p }: BlockProps & { id: BlockId }) {
     case 'daily': return <DailyBlock />;
     case 'insulin': return <InsulinBlock terms={terms} />;
     case 'explorer': return <WhatLoopDidExplorer route={p.route} go={p.go} clinician />;
+    case 'therapy': return <YourLoopSettings audience="clinician" />;
     case 'timeline': return <TimelineBlock />;
     case 'compare': return <CompareBlock terms={terms} />;
     case 'beforeAfter': return <BeforeAfterBlock />;
@@ -139,7 +142,7 @@ function TirBlock({ terms }: { terms: Terms }) {
 function TldrBlock({ onEvidence }: { onEvidence?: (section: string) => void }) {
   return (
     <section className="panel" aria-labelledby="tldr-h">
-      <h3 id="tldr-h" className="label">Visit TLDR</h3>
+      <h3 id="tldr-h" className="label">Visit TLDR · where your input helps most</h3>
       <ul className="tldr">
         {tldrLines().map((l) => (
           <li key={l.key}>
@@ -183,7 +186,7 @@ function DailyBlock() {
         <h3 id="daily-h" className="label">Daily glucose · day by day</h3>
         <span className="caption">{DAILY.days.filter((d) => d.usable).length} of {DAILY.days.length} days counted</span>
       </div>
-      <Fit className="chart-md">{({ w, h }) => <DailyChart days={DAILY.days} today={null} W={w} H={h} />}</Fit>
+      <Fit className="chart-md">{({ w, h }) => <DailyChart days={DAILY.days} today={null} W={w} H={h} band={STANDARD} />}</Fit>
       <span className="caption">Dot: the day’s average · bar: its middle half · line: 5–95% · 70–180 mg/dL shaded</span>
     </section>
   );
@@ -295,7 +298,7 @@ const one = (x: number | null) => (x == null ? '—' : `${+x.toFixed(1)}`);
 export function halves(days: readonly DailyGlucose[]) {
   const used = days.filter((d) => d.usable);
   const mid = Math.ceil(used.length / 2);
-  const sum = (ds: DailyGlucose[]) => ({ n: ds.length, tir: avg(ds.map((d) => d.inRangePct)), below: avg(ds.map((d) => d.belowPct)), above: avg(ds.map((d) => d.abovePct)), mean: avg(ds.map((d) => d.meanMgdl)) });
+  const sum = (ds: DailyGlucose[]) => ({ n: ds.length, tir: avg(ds.map((d) => d.std?.inRangePct ?? null)), below: avg(ds.map((d) => d.std?.belowPct ?? null)), above: avg(ds.map((d) => d.std?.abovePct ?? null)), mean: avg(ds.map((d) => d.meanMgdl)) });
   return { first: sum(used.slice(0, mid)), second: sum(used.slice(mid)) };
 }
 
@@ -306,12 +309,12 @@ function DailyRangeBars({ days, W, H }: { days: readonly DailyGlucose[]; W: numb
   const slot = W / Math.max(1, days.length);
   const bw = Math.min(22, slot * 0.64);
   const every = slot < 34 ? 2 : 1;
-  const label = `Time in range by day, ${days.length} days: ${days.map((d) => (d.usable && d.inRangePct != null ? `${d.label} ${Math.round(d.inRangePct)}% in range` : `${d.label} not counted`)).join('; ')}.`;
+  const label = `Time in range by day, ${days.length} days: ${days.map((d) => (d.usable && d.std ? `${d.label} ${Math.round(d.std.inRangePct)}% in range` : `${d.label} not counted`)).join('; ')}.`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={label} style={{ display: 'block' }}>
       {days.map((d, i) => {
         const x = i * slot + (slot - bw) / 2;
-        const lo = d.belowPct ?? 0, hi = d.abovePct ?? 0, inr = d.inRangePct ?? 0;
+        const lo = d.std?.belowPct ?? 0, hi = d.std?.abovePct ?? 0, inr = d.std?.inRangePct ?? 0;
         const tot = lo + hi + inr || 1;
         const hLo = (lo / tot) * ph, hIn = (inr / tot) * ph, hHi = (hi / tot) * ph;
         return (

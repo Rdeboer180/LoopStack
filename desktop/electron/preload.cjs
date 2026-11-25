@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld('loopstack', Object.freeze({
   nightscout: Object.freeze({
     config: () => ipcRenderer.invoke('ns:config'),
     connect: (input) => ipcRenderer.invoke('ns:connect', { url: String(input?.url ?? ''), token: String(input?.token ?? ''), name: String(input?.name ?? '') }),
-    fetch: () => ipcRenderer.invoke('ns:fetch'),
+    fetch: (opts) => ipcRenderer.invoke('ns:fetch', opts),
     disconnect: () => ipcRenderer.invoke('ns:disconnect'),
   }),
   github: Object.freeze({
@@ -50,6 +50,21 @@ contextBridge.exposeInMainWorld('loopstack', Object.freeze({
     exportBrief: (input) => ipcRenderer.invoke('next:export', { markdown: String(input?.markdown ?? '') }),
     preview: (input) => ipcRenderer.invoke('next:preview', { items: Array.isArray(input?.items) ? input.items : [] }),
     commit: (input) => ipcRenderer.invoke('next:commit', { items: Array.isArray(input?.items) ? input.items : [], reviewed: input?.reviewed === true, confirmDosing: input?.confirmDosing === true }),
+  }),
+  buildNotes: Object.freeze({
+    save: (input) => ipcRenderer.invoke('buildnotes:save', { scope: String(input?.scope ?? ''), items: Array.isArray(input?.items) ? input.items : [], brief: typeof input?.brief === 'string' ? input.brief : undefined }),
+    paths: () => ipcRenderer.invoke('buildnotes:paths'),
+  }),
+  sync: Object.freeze({
+    config: () => ipcRenderer.invoke('sync:config'),
+    choose: () => ipcRenderer.invoke('sync:choose'),
+    clear: () => ipcRenderer.invoke('sync:clear'),
+    // Records the folder taught this Mac; the page merges them into its own store.
+    onMerged: (cb) => {
+      const f = (_e, v) => { if (typeof cb === 'function') cb({ scope: String(v?.scope ?? ''), items: Array.isArray(v?.items) ? v.items : [] }); };
+      ipcRenderer.on('sync:merged', f);
+      return () => ipcRenderer.removeListener('sync:merged', f);
+    },
   }),
   favorites: Object.freeze({
     list: () => ipcRenderer.invoke('fav:list'),

@@ -5,7 +5,7 @@
 // those companies (BRAND-2). The numbers are the same in every style.
 import { useEffect, useState } from 'react';
 
-export type BlockId = 'read' | 'stats' | 'agp' | 'tir' | 'tldr' | 'patterns' | 'daily' | 'insulin' | 'explorer' | 'timeline' | 'compare' | 'beforeAfter' | 'trends' | 'notes';
+export type BlockId = 'read' | 'stats' | 'agp' | 'tir' | 'tldr' | 'patterns' | 'daily' | 'insulin' | 'explorer' | 'therapy' | 'timeline' | 'compare' | 'beforeAfter' | 'trends' | 'notes';
 export type StyleId = 'loopstack' | 'clarity' | 'glooko' | 'tandem' | 'carelink';
 
 export interface Terms {
@@ -48,7 +48,7 @@ export const LOOPSTACK_STYLE: ReportStyle = {
   sections: [
     { id: 'glucose', label: 'Visit TLDR', blocks: ['read', 'agp', 'tldr'] },
     { id: 'loop', label: 'What Loop did', blocks: ['insulin', 'explorer'] },
-    { id: 'changes', label: 'Settings timeline', blocks: ['timeline', 'beforeAfter'] },
+    { id: 'changes', label: 'Settings timeline', blocks: ['therapy', 'timeline', 'beforeAfter'] },
     TRENDS,
     NOTES,
   ],
@@ -57,6 +57,12 @@ export const LOOPSTACK_STYLE: ReportStyle = {
 // Section orders and generic metric names from each report's published clinic
 // guide (researched 2026-11-15). Loop's own meanings are kept: automation is
 // "closed loop" in every style, never another system's product term.
+//
+// Audit, Nov 24: a style borrows a report's order and words so a clinician finds
+// things where they expect them. It never makes Loop look like that pump. So in
+// every style: the settings section is "Loop settings" and leads with the values
+// Loop doses against (therapy), and the first section ends on where the care
+// team's input helps most (tldr). No block appears twice in one style.
 
 /** Overview first: statistics, time in range, the profile, then ranked patterns. CGM-first, Loop after. */
 const CLARITY: ReportStyle = {
@@ -66,10 +72,10 @@ const CLARITY: ReportStyle = {
   numbered: false,
   terms: { ...DEFAULT_TERMS, tir: 'Time in Range', mean: 'Average Glucose', cv: 'Coefficient of Variation', sensor: 'Sensor Usage', automation: 'Time in closed loop', statsTitle: 'Overview', agpTitle: 'AGP · ambulatory glucose profile', tirTitle: 'Time in Range', compareTitle: 'Compare · this period and the one before' },
   sections: [
-    { id: 'overview', label: 'Overview', blocks: ['stats', 'tir', 'agp', 'patterns'] },
+    { id: 'overview', label: 'Overview', blocks: ['stats', 'tir', 'agp', 'tldr'] },
     { id: 'patterns', label: 'Patterns', blocks: ['patterns', 'daily'] },
     { id: 'compare', label: 'Compare', blocks: ['compare', 'beforeAfter'] },
-    { id: 'loop', label: 'Loop and settings', blocks: ['insulin', 'explorer', 'timeline'] },
+    { id: 'loop', label: 'Loop and settings', blocks: ['insulin', 'explorer', 'therapy', 'timeline'] },
     TRENDS_ONLY,
     NOTES,
   ],
@@ -83,10 +89,10 @@ const GLOOKO: ReportStyle = {
   numbered: false,
   terms: { ...DEFAULT_TERMS, tir: 'Time in Range', mean: 'Average glucose', sensor: 'CGM active', automation: 'Time in closed loop', statsTitle: 'CGM information', insulinTitle: 'Insulin information · system details', tirTitle: 'Time in Range' },
   sections: [
-    { id: 'summary', label: 'Summary', blocks: ['stats', 'tir', 'insulin'] },
+    { id: 'summary', label: 'Summary', blocks: ['stats', 'tir', 'insulin', 'tldr'] },
     { id: 'weekly', label: 'Weekly', blocks: ['agp', 'patterns'] },
     { id: 'daily', label: 'Daily', blocks: ['daily', 'explorer'] },
-    { id: 'settings', label: 'Settings', blocks: ['timeline', 'beforeAfter'] },
+    { id: 'settings', label: 'Loop settings', blocks: ['therapy', 'timeline', 'beforeAfter'] },
     TRENDS,
     NOTES,
   ],
@@ -96,13 +102,13 @@ const GLOOKO: ReportStyle = {
 const TANDEM: ReportStyle = {
   id: 'tandem',
   label: 'Tandem Source-style overview',
-  note: 'Section order familiar from Tandem Source’s clinic report: Overview, Daily Timeline, Pump Settings. Not made by or affiliated with Tandem Diabetes Care.',
+  note: 'Section order familiar from Tandem Source’s clinic report: Overview, Daily Timeline, then settings, here Loop’s own. Not made by or affiliated with Tandem Diabetes Care.',
   numbered: false,
   terms: { ...DEFAULT_TERMS, tir: 'Time in target range', mean: 'Average CGM', sensor: 'CGM time of use', automation: 'Closed-loop usage', statsTitle: 'CGM summary', agpTitle: 'Glucose trends · median and spread', tirTitle: 'Time in target range', insulinTitle: 'Average daily insulin', compareTitle: 'Time in range comparison', tdi: 'average total daily insulin' },
   sections: [
-    { id: 'overview', label: 'Overview', blocks: ['stats', 'compare', 'insulin', 'agp'] },
+    { id: 'overview', label: 'Overview', blocks: ['stats', 'compare', 'insulin', 'agp', 'tldr'] },
     { id: 'timeline', label: 'Daily timeline', blocks: ['daily', 'explorer'] },
-    { id: 'settings', label: 'Pump settings', blocks: ['timeline', 'beforeAfter'] },
+    { id: 'settings', label: 'Loop settings', blocks: ['therapy', 'timeline', 'beforeAfter'] },
     TRENDS_ONLY,
     NOTES,
   ],
@@ -112,13 +118,13 @@ const TANDEM: ReportStyle = {
 const CARELINK: ReportStyle = {
   id: 'carelink',
   label: 'CareLink-style assessment',
-  note: 'Section order familiar from Medtronic CareLink’s Assessment and Progress report: two periods compared first, then Weekly Review and Device Settings. Not made by or affiliated with Medtronic.',
+  note: 'Section order familiar from Medtronic CareLink’s Assessment and Progress report: two periods compared first, then Weekly Review, then settings, here Loop’s own. Not made by or affiliated with Medtronic.',
   numbered: false,
   terms: { ...DEFAULT_TERMS, tir: 'Time in range', mean: 'Average SG', sensor: 'Sensor wear', automation: 'Closed loop (share of time)', statsTitle: 'Statistics', compareTitle: 'Assessment and progress · this period and the one before', tirTitle: 'Time in range', algorithm: 'automatic (basal and corrections)', user: 'user-entered boluses' },
   sections: [
-    { id: 'assessment', label: 'Assessment and progress', blocks: ['compare', 'agp', 'patterns', 'tir', 'stats', 'insulin'] },
+    { id: 'assessment', label: 'Assessment and progress', blocks: ['compare', 'agp', 'patterns', 'tir', 'stats', 'insulin', 'tldr'] },
     { id: 'weekly', label: 'Weekly review', blocks: ['daily', 'explorer'] },
-    { id: 'settings', label: 'Device settings', blocks: ['timeline', 'beforeAfter'] },
+    { id: 'settings', label: 'Loop settings', blocks: ['therapy', 'timeline', 'beforeAfter'] },
     TRENDS_ONLY,
     NOTES,
   ],
